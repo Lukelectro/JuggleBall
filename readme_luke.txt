@@ -1,0 +1,1 @@
+Attempt to build a stup-up (3v-4.2V in, 5V out) on stm32F030c4p6. But with a lot of steps in between, it's mostly for the learning experience and the goal might change later on too. (To a 3ch 0-60mA output, led driver).

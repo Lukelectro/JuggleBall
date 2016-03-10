@@ -1,0 +1,120 @@
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+flash            0x0000000008000000 0x0000000000004000
+ram              0x0000000020000000 0x0000000000001000
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD init.o
+LOAD main.o
+LOAD /usr/lib/gcc/arm-none-eabi/4.8/armv6-m/libgcc.a
+                0x0000000008000000                . = ORIGIN (flash)
+
+.text           0x0000000008000000      0x31c
+ *(.vectors)
+ .vectors       0x0000000008000000       0xb4 init.o
+                0x0000000008000000                Vectors
+ *(.text)
+ .text          0x00000000080000b4       0x7c init.o
+                0x00000000080000b4                init
+                0x0000000008000128                Default_Handler
+ .text          0x0000000008000130      0x1ec main.o
+                0x0000000008000130                delay
+                0x000000000800014c                initClock
+                0x00000000080001f8                main
+
+.glue_7         0x000000000800031c        0x0
+ .glue_7        0x000000000800031c        0x0 linker stubs
+
+.glue_7t        0x000000000800031c        0x0
+ .glue_7t       0x000000000800031c        0x0 linker stubs
+
+.vfp11_veneer   0x000000000800031c        0x0
+ .vfp11_veneer  0x000000000800031c        0x0 linker stubs
+
+.v4_bx          0x000000000800031c        0x0
+ .v4_bx         0x000000000800031c        0x0 linker stubs
+
+.iplt           0x000000000800031c        0x0
+ .iplt          0x000000000800031c        0x0 init.o
+
+.rel.dyn        0x000000000800031c        0x0
+ .rel.iplt      0x000000000800031c        0x0 init.o
+                0x0000000020000000                . = ORIGIN (ram)
+
+.data           0x0000000020000000        0x0 load address 0x000000000800031c
+                0x000000000800031c                INIT_DATA_VALUES = LOADADDR (.data)
+                0x0000000020000000                INIT_DATA_START = .
+ *(.data)
+ .data          0x0000000020000000        0x0 init.o
+ .data          0x0000000020000000        0x0 main.o
+                0x0000000020000000                INIT_DATA_END = .
+                0x0000000020000000                BSS_START = .
+
+.igot.plt       0x0000000020000000        0x0 load address 0x000000000800031c
+ .igot.plt      0x0000000020000000        0x0 init.o
+
+.bss            0x0000000020000000        0x0 load address 0x000000000800031c
+ *(.bss)
+ .bss           0x0000000020000000        0x0 init.o
+ .bss           0x0000000020000000        0x0 main.o
+                0x0000000020000000                BSS_END = .
+OUTPUT(main.elf elf32-littlearm)
+
+.debug_info     0x0000000000000000      0x1ad
+ .debug_info    0x0000000000000000      0x105 init.o
+ .debug_info    0x0000000000000105       0xa8 main.o
+
+.debug_abbrev   0x0000000000000000      0x16b
+ .debug_abbrev  0x0000000000000000       0xd2 init.o
+ .debug_abbrev  0x00000000000000d2       0x99 main.o
+
+.debug_aranges  0x0000000000000000       0x40
+ .debug_aranges
+                0x0000000000000000       0x20 init.o
+ .debug_aranges
+                0x0000000000000020       0x20 main.o
+
+.debug_line     0x0000000000000000       0xe1
+ .debug_line    0x0000000000000000       0x51 init.o
+ .debug_line    0x0000000000000051       0x90 main.o
+
+.debug_str      0x0000000000000000      0x146
+ .debug_str     0x0000000000000000       0xec init.o
+ .debug_str     0x00000000000000ec       0x5a main.o
+                                         0x7e (size before relaxing)
+
+.comment        0x0000000000000000       0x2d
+ .comment       0x0000000000000000       0x2d init.o
+                                         0x2e (size before relaxing)
+ .comment       0x000000000000002d       0x2e main.o
+
+.ARM.attributes
+                0x0000000000000000       0x31
+ .ARM.attributes
+                0x0000000000000000       0x31 init.o
+ .ARM.attributes
+                0x0000000000000031       0x31 main.o
+
+.debug_frame    0x0000000000000000       0xb8
+ .debug_frame   0x0000000000000000       0x4c init.o
+ .debug_frame   0x000000000000004c       0x6c main.o
+
+Cross Reference Table
+
+Symbol                                            File
+BSS_END                                           init.o
+BSS_START                                         init.o
+Default_Handler                                   init.o
+INIT_DATA_END                                     init.o
+INIT_DATA_START                                   init.o
+INIT_DATA_VALUES                                  init.o
+Vectors                                           init.o
+delay                                             main.o
+init                                              init.o
+initClock                                         main.o
+main                                              main.o
+                                                  init.o
