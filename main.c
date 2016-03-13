@@ -72,7 +72,7 @@ int main()
         // Wait for ADCAL to be zero again:
         while (ADC_CR & (BIT31));
         // then set up adc:
-        ADC_CHSELR = (BIT6); // Ch6 = PA6? (Set up channels)
+        ADC_CHSELR = (BIT3); // Ch3 = PA3? (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result.
         ADC_CFGR1 |= (BIT12 | BIT16); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
                                // BIT16: Discontinues operation
