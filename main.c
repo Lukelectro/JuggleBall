@@ -1,6 +1,6 @@
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
 
-// I realy should use ST provide files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile. Though I could (learn to) write my own...)
+// I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
 void delay(int dly)
 {
@@ -51,8 +51,11 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER |= BIT8; // make bits 14 an output (PA4 is PIN10 is BIT8)
+	GPIOA_MODER |= ( BIT8 | BIT13 | BIT6 | BIT7 ) ; // make PA4 an output (PA4 is PIN10 is BIT8), and PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7)
 	
+	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
+        ADC_CR |= (BIT31); // set adcal	
+
 	//set up timer 3 for PWM
 	TIM3_PSC = 2; // prescaler. (48Mhz/psc=tim3clock)
         TIM3_ARR = 0xFFFF;  // 16 bit timer, AutoReloadRegister (frequency)
@@ -65,9 +68,33 @@ int main()
 
         // Set AF(AF1) en MODER to select PWM output on pin PA6 (Is the only option on this low-pincount stm32f030c4 device in SSOP20)
 	GPIOA_AFRL |= BIT24 ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1 
-	GPIOA_MODER |= BIT13; // to set to AF (And not BIT12 for OUTPUT)
+	
+        // Wait for ADCAL to be zero again:
+        while (ADC_CR & (BIT31));
+        // then set up adc:
+        ADC_CHSELR = (BIT6); // Ch6 = PA6? (Set up channels)
+        // It will scan all these channels, but it has only 1 data register for the result.
+        ADC_CFGR1 |= (BIT12 | BIT16); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
+                               // BIT16: Discontinues operation
+        // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can 1.5clk,  BIT2 set = 13.5 clck and higher Zin.)      
+        // After setting up enable power and wait for ready:
+        ADC_CR |= (BIT0); // Set ADEN (To enable power. Shouldn't I enable clock too, somewhere?)
+        while ( ! (ADC_ISR & (BIT0)) );// check ADCRDY (In ADC_ISR, bit0) to see if conversion can be starten
+        ADC_CR |= (BIT2); // Set ADSTART to start conversion
+
 	while(1)
-	{			
+	{		
+	        // TODO: Poll for adc result ready, then copy and start a new one. (Could do this with DMA or interrupt... Should learn howto DMA)
+                int adcresult;
+                if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
+                {
+                adcresult=ADC_DR;
+                ADC_ISR|=(BIT2); // clear EOC flag.
+                ADC_CR |= (BIT2); // ADSTART
+                }
+		
+                // Now, I could get at ADCresult in the debugger I think, but TODO: PWM LED with ADC result.
+
 		GPIOA_ODR |= BIT4; // bit 4 for A4
 		//TIM3_CCR1 = 0x01FF; // Compare register 1, dutycycle on output 1 (It has 4)
 		//delay(1000000);
