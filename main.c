@@ -1,5 +1,4 @@
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
-
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
 void delay(int dly)
@@ -37,7 +36,13 @@ void initClock()
         
         // enable pheripheral clock to timer. (Easily forgotten. Beginner mistake)
         RCC_APB1ENR |= BIT1;
+        
+        RCC_APB2ENR |= BIT9; // enable clock to adc
+        RCC_CR |= BIT0; // turn on HSI clock (For ADC)
+        while(!(RCC_CR & BIT1)); // wait till HSI is stable
+        
 }
+
 
 
 
@@ -71,15 +76,19 @@ int main()
 	
         // Wait for ADCAL to be zero again:
         while (ADC_CR & (BIT31));
-        // then set up adc:
+        // then power up and set up adc:
+        ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
+        
+        while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if conversion can be started 
+        
+        // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3); // Ch3 = PA3? (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result.
         ADC_CFGR1 |= (BIT12 | BIT16); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
-                               // BIT16: Discontinues operation
+                               // BIT16: Discontinues operation (Don't auto scan, wait for trigger to scan next ch)
         // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can 1.5clk,  BIT2 set = 13.5 clck and higher Zin.)      
-        // After setting up enable power and wait for ready:
-        ADC_CR |= (BIT0); // Set ADEN (To enable power. Shouldn't I enable clock too, somewhere?)
-        while ( ! (ADC_ISR & (BIT0)) );// check ADCRDY (In ADC_ISR, bit0) to see if conversion can be starten
+        
+        
         ADC_CR |= (BIT2); // Set ADSTART to start conversion
 
 	while(1)
