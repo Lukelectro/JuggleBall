@@ -99,17 +99,21 @@ int main()
         ADC_CFGR1 |= (BIT12 ); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can 1.5clk,  BIT2 set = 13.5 clck and higher Zin.)      
+        // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can: 1.5clk)     
         
         ADC_IER |= BIT2; // Enable end of conversion interrupt. TODO: Still get no interrupt...
         
         
-        /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions...
+        /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
         NVIC_EnableIRQ(ADC1_COMP_IRQn); // enable ADC interrupt
         NVIC_SetPriority(ADC1_COMP_IRQn,2); // set priority (to 2)
+        Fortunately the STM32F0xxx Cortex-M0 programming manual (PM0215) does document the NVIC. somewhat. And the CMSIS libs can be downloaded from st.com
+        I could just use them... But I don't :)
         */
-        //SETENA |= (BIT12); // guesswork, since all I can find is "use cmsis". (Enable IRQ12?)
-        //TODO: set priority.
+        
+        ISER |= (BIT12); // Enable IRQ12, (That's the adc)
+        IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
+        //NVIC is not well documented imho, but the above is tested and WORKS. Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
@@ -149,7 +153,7 @@ int main()
 
 
 void ADC_Handler(){
-        // toggle LED when handler gets run.
+        // toggle LED when handler gets run. (To check samplerate)
         GPIOA_ODR |= BIT4;
         GPIOA_ODR &= ~BIT4;
         
