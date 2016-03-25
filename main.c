@@ -1,13 +1,13 @@
 /*
 NOTE/IDEA:
 Clock ADC with dedictated 14Mhz clock. Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
-Check this by having ADC EOC interupt toggling a pin. 
+Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
 Goal: 3ch PWM LED switchmode current source. But for now a single ch. boost converter 3v3 ->5V. And before that just a ASC sampling at the right rate and a PMW driving a LED at a frequency that's lower then finaly will be used for the smps.
 
-For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare might need to stay below ARR (Read The Fine Manual).
+For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
@@ -57,7 +57,7 @@ void initClock()
 
 
 
-int adcresult; // can be read in debugger too. Global because set from ISR.
+volatile int adcresult; // can be read in debugger too. Global because set from ISR.
 	
 
 
@@ -75,8 +75,8 @@ int main()
 
 	//set up timer 3 for PWM
 	TIM3_PSC = 0; // prescaler. (48Mhz/psc+1=tim3clock)
-        TIM3_ARR = 0xFFFF;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
-        TIM3_CCR1 = 0xEFFF; // Compare register 1, dutycycle on output 1 (It has 4)
+        TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
+        TIM3_CCR1 = 2048; // Compare register 1, dutycycle on output 1 (It has 4)
         TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5)
         TIM3_CCER |= BIT0 ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output
         TIM3_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
@@ -96,12 +96,12 @@ int main()
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3); // Ch3 = PA3, on pin9. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result.
-        ADC_CFGR1 |= (BIT12 ); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can: 1.5clk)     
+        ADC_SMPR |= (BIT2 | BIT1); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk)     
         
-        ADC_IER |= BIT2; // Enable end of conversion interrupt. TODO: Still get no interrupt...
+        ADC_IER |= BIT2; // Enable end of conversion interrupt.
         
         
         /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
@@ -121,21 +121,13 @@ int main()
 
 	while(1)
 	{	
-	        /*	
-	        move this to interrupt:
-	        
-	        // Poll for adc result ready, then copy and start a new one. (Could do this with DMA or interrupt... Should learn howto DMA)
-                int adcresult; // can be read in debugger too.
-                if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
-                {
-                adcresult=ADC_DR;
-                ADC_ISR|=(BIT2); // clear EOC flag.
-                ADC_CR |= (BIT2); // ADSTART
-                }
-		*/
+	    
 		
-                // TODO: PWM LED with ADC result.
-
+                TIM3_CCR1=adcresult>>1; // PWM LED with ADC result. Note: to adjust pwm freq, timer counts to max 2048. 
+                delay(10000); // seemed more easy than it is...
+                //TODO: implement feedback loop/switcher (if (CCR1=(Setpoint-adresult)>0) ---> else CCR1=0)
+                
+                /*
 		//GPIOA_ODR |= BIT4; // bit 4 for A4
 		for(int i=0;i<0xFFFF;i++) {
 		        TIM3_CCR1 = i;
@@ -146,6 +138,7 @@ int main()
 		        TIM3_CCR1 = i; 
 		        delay(100);
 		 }
+		 */
 	} 
 	return 0;
 }
@@ -161,8 +154,10 @@ void ADC_Handler(){
                 {
                 adcresult=ADC_DR;
                 // ADC_ISR|=(BIT2); // clear EOC flag. (Gets auto-cleared when reading ADC_DR)
-                ADC_CR |= (BIT2); // ADSTART to start next conversion (Or set CONT in ADC_CFGR1)
+                //ADC_CR |= (BIT2); // ADSTART to start next conversion (Or set CONT in ADC_CFGR1)
                 }
+                
+        // TODO: enable & check OVF.
 		
 }
 
