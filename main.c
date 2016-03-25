@@ -57,7 +57,7 @@ void initClock()
 
 
 
-
+int adcresult; // can be read in debugger too. Global because set from ISR.
 	
 
 
@@ -101,37 +101,43 @@ int main()
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
         // ADC_SMPR |= BIT2; TODO: Set sample rate (Default = as fast as it can 1.5clk,  BIT2 set = 13.5 clck and higher Zin.)      
         
-        //ADC_IER |= BIT2; // Enable end of conversion interrupt. TODO: ATTENTION: The default handler in innit.c is a while(1)!! 
-        // Also TODO: read up on NVIC as it is a little more complicated then AVR's GIE...
+        ADC_IER |= BIT2; // Enable end of conversion interrupt. TODO: Still get no interrupt...
         
+        
+        /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions...
+        NVIC_EnableIRQ(ADC1_COMP_IRQn); // enable ADC interrupt
+        NVIC_SetPriority(ADC1_COMP_IRQn,2); // set priority (to 2)
+        */
+        //SETENA |= (BIT12); // guesswork, since all I can find is "use cmsis". (Enable IRQ12?)
+        //TODO: set priority.
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
         ADC_CR |= (BIT2); // Set ADSTART to start conversion
 
 	while(1)
-	{		
-	        // TODO: Poll for adc result ready, then copy and start a new one. (Could do this with DMA or interrupt... Should learn howto DMA)
-                int adcresult;
+	{	
+	        /*	
+	        move this to interrupt:
+	        
+	        // Poll for adc result ready, then copy and start a new one. (Could do this with DMA or interrupt... Should learn howto DMA)
+                int adcresult; // can be read in debugger too.
                 if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR;
                 ADC_ISR|=(BIT2); // clear EOC flag.
                 ADC_CR |= (BIT2); // ADSTART
                 }
+		*/
 		
-                // Now, I could get at ADCresult in the debugger I think, but TODO: PWM LED with ADC result.
+                // TODO: PWM LED with ADC result.
 
-		GPIOA_ODR |= BIT4; // bit 4 for A4
-		//TIM3_CCR1 = 0x01FF; // Compare register 1, dutycycle on output 1 (It has 4)
-		//delay(1000000);
+		//GPIOA_ODR |= BIT4; // bit 4 for A4
 		for(int i=0;i<0xFFFF;i++) {
 		        TIM3_CCR1 = i;
 		        delay(100);        
 		} 
-		GPIOA_ODR &= ~BIT4; 
-		//TIM3_CCR1 = 0x1EFF; // Compare register 1, dutycycle on output 1 (It has 4)
-		//delay(1000000);
+		//GPIOA_ODR &= ~BIT4; 
 		for(int i=0xFFFF;i>0;i--) {
 		        TIM3_CCR1 = i; 
 		        delay(100);
@@ -142,7 +148,19 @@ int main()
 
 
 
-
+void ADC_Handler(){
+        // toggle LED when handler gets run.
+        GPIOA_ODR |= BIT4;
+        GPIOA_ODR &= ~BIT4;
+        
+        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
+                {
+                adcresult=ADC_DR;
+                // ADC_ISR|=(BIT2); // clear EOC flag. (Gets auto-cleared when reading ADC_DR)
+                ADC_CR |= (BIT2); // ADSTART to start next conversion (Or set CONT in ADC_CFGR1)
+                }
+		
+}
 
 
 

@@ -1,5 +1,7 @@
 void init(void);
 void Default_Handler(void);
+extern void ADC_Handler(void); //added
+extern int main(void);         //added
 
 // The following are 'declared' in the linker script
 extern unsigned char  INIT_DATA_VALUES;
@@ -39,7 +41,7 @@ const void * Vectors[] __attribute__((section(".vectors"))) ={
 	Default_Handler, 	/* 9: DMA_CH1 */
 	Default_Handler, 	/* 10: DMA_CH2_3 */
 	Default_Handler, 	/* 11: DMA_CH4_5 */
-	Default_Handler, 	/* 12: ADC */
+	ADC_Handler, 	        /* 12: ADC */ // changed to own handler.
 	Default_Handler, 	/* 13: TIM1_BRK_UP_TRG_COM */
 	Default_Handler, 	/* 14: TIM1_CC */
 	Default_Handler, 	/* 15: Reserved */
