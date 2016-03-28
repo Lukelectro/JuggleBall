@@ -5,13 +5,16 @@ Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
-Goal: 3ch PWM LED switchmode current source. But for now a single ch. boost converter 3v3 ->5V. And before that just a ASC sampling at the right rate and a PMW driving a LED at a frequency that's lower then finaly will be used for the smps.
+Goal: 3ch PWM LED switchmode current source. But for now a single ch. boost converter 3v3 ->5V.
 
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
+
+
+#define SETPOINT 947 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
 
 void delay(int dly)
 {
@@ -76,7 +79,7 @@ int main()
 	//set up timer 3 for PWM
 	TIM3_PSC = 0; // prescaler. (48Mhz/psc+1=tim3clock)
         TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
-        TIM3_CCR1 = 2048; // Compare register 1, dutycycle on output 1 (It has 4)
+        //TIM3_CCR1 = 2048; // Compare register 1, dutycycle on output 1 (It has 4)
         TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5)
         TIM3_CCER |= BIT0 ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output
         TIM3_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
@@ -122,23 +125,7 @@ int main()
 	while(1)
 	{	
 	    
-		
-                TIM3_CCR1=adcresult>>1; // PWM LED with ADC result. Note: to adjust pwm freq, timer counts to max 2048. 
-                delay(10000); // seemed more easy than it is...
-                //TODO: implement feedback loop/switcher (if (CCR1=(Setpoint-adresult)>0) ---> else CCR1=0)
-                
-                /*
-		//GPIOA_ODR |= BIT4; // bit 4 for A4
-		for(int i=0;i<0xFFFF;i++) {
-		        TIM3_CCR1 = i;
-		        delay(100);        
-		} 
-		//GPIOA_ODR &= ~BIT4; 
-		for(int i=0xFFFF;i>0;i--) {
-		        TIM3_CCR1 = i; 
-		        delay(100);
-		 }
-		 */
+		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
 	return 0;
 }
@@ -146,15 +133,18 @@ int main()
 
 
 void ADC_Handler(){
-        // toggle LED when handler gets run. (To check samplerate)
+        /* toggle LED when handler gets run. (To check samplerate)
         GPIOA_ODR |= BIT4;
         GPIOA_ODR &= ~BIT4;
-        
+        */
+        static int pwm=0; // keep between invocations
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
-                adcresult=ADC_DR;
-                // ADC_ISR|=(BIT2); // clear EOC flag. (Gets auto-cleared when reading ADC_DR)
-                //ADC_CR |= (BIT2); // ADSTART to start next conversion (Or set CONT in ADC_CFGR1)
+                adcresult=ADC_DR; // read adc result for debugger/global use.
+                pwm += (SETPOINT-adcresult); // integrating comparator.
+                if (pwm<0) pwm= 0;
+                if (pwm>1024) pwm=1024; //max 50% D.
+                TIM3_CCR1 = pwm;
                 }
                 
         // TODO: enable & check OVF.
