@@ -8,7 +8,7 @@ not to self: Once I start sampling at multiple chs, check samplerate for each ch
 Goal: 3ch PWM LED switchmode current source.
 WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
 TODO:   subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
-        subgoal 3: Multichannel ADC measurements
+        subgoal 3: Multichannel ADC measurements. (note: samplerate should be >150Khz for each ch, so decrease sampletime and/or trigger from a timer)
         subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA)
         Subgaol 5: Close the feedback loop. All 3. Not at once. And maybe test with resistors first so the led's stay intact.
 
