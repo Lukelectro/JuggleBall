@@ -6,8 +6,8 @@ Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
 Goal: 3ch PWM LED switchmode current source.
-TODO:   Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
-        subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
+WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
+TODO:   subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
         subgoal 3: Multichannel ADC measurements
         subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA)
         Subgaol 5: Close the feedback loop. All 3. Not at once. And maybe test with resistors first so the led's stay intact.
@@ -76,8 +76,7 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER |= ( BIT8 | BIT13 | BIT6 | BIT7 ) ; // make PA4 an output (PA4 is PIN10 is BIT8), and PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7)
-	
+	GPIOA_MODER |= ( BIT8 | BIT13 | BIT6 | BIT7 | BIT15) ; // make PA4 an output (PA4 is PIN10 is BIT8), and PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7), PA7 AF (TIM3_CH2) Bit 15.
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
         ADC_CR |= (BIT31); // set adcal	
 
@@ -85,14 +84,14 @@ int main()
 	TIM3_PSC = 0; // prescaler. (48Mhz/psc+1=tim3clock)
         TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
         //TIM3_CCR1 = 2048; // Compare register 1, dutycycle on output 1 (It has 4)
-        TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5)
-        TIM3_CCER |= BIT0 ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output
+        TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6 | BIT11 | BIT14 | BIT13) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5), OC2PE (bit11) preload enable, PWM mode for ch2 (BIT 14,13) 
+        TIM3_CCER |= (BIT0 | BIT4) ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output on ch1, bit4 for ch2.
         TIM3_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
         TIM3_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
         TIM3_CR1 |= BIT0 ; // start after updating registers!
 
         // Set AF(AF1) en MODER to select PWM output on pin PA6 (Is the only option on this low-pincount stm32f030c4 device in SSOP20)
-	GPIOA_AFRL |= BIT24 ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1 
+	GPIOA_AFRL |= (BIT24 |BIT28); ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1, BIT28 is idem for PA7/TIM3ch2.
 	
         // Wait for ADCAL to be zero again:
         while (ADC_CR & (BIT31));
@@ -129,7 +128,17 @@ int main()
 
 	while(1)
 	{	
-	    
+	     
+	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2.
+	     TIM3_CCR2 = i;
+	     delay(1000);
+	     }
+	     for(int i=2048;i>0;i--){ // fade LED on TIM3CH2.
+	     TIM3_CCR2 = i;
+	     delay(1000);
+	     }
+	   
+	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
 	return 0;
@@ -152,8 +161,7 @@ void ADC_Handler(){
                 TIM3_CCR1 = pwm;
                 }
                 
-        // TODO: enable & check OVF.
-		
+        // TODO: enable & check OVF.	
 }
 
 
