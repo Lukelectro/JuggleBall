@@ -5,7 +5,12 @@ Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
-Goal: 3ch PWM LED switchmode current source. But for now a single ch. boost converter 3v3 ->5V.
+Goal: 3ch PWM LED switchmode current source.
+TODO:   Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
+        subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
+        subgoal 3: Multichannel ADC measurements
+        subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA)
+        Subgaol 5: Close the feedback loop. All 3. Not at once. And maybe test with resistors first so the led's stay intact.
 
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 */
