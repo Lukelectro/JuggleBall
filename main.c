@@ -1,7 +1,7 @@
 /*
 NOTE/IDEA:
 Clock ADC with dedictated 14Mhz clock. Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
-Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)
+Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)TODO: That's for one ch. For 3ch 71.5/3=23.8 so maybe try 28.5 or 13.5clks sample time.
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
