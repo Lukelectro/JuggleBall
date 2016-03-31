@@ -7,8 +7,8 @@ not to self: Once I start sampling at multiple chs, check samplerate for each ch
 
 Goal: 3ch PWM LED switchmode current source.
 WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
-TODO:   subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
-        subgoal 3: Multichannel ADC measurements. (note: samplerate should be >150Khz for each ch, so decrease sampletime and/or trigger from a timer)
+WORKS:  Subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
+TODO:   subgoal 3: Multichannel ADC measurements. (note: samplerate should be >150Khz for each ch, so decrease sampletime and/or trigger from a timer)
         subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA)
         Subgaol 5: Close the feedback loop. All 3. Not at once. And maybe test with resistors first so the led's stay intact.
 
@@ -54,11 +54,11 @@ void initClock()
         // set PLL as system clock source 
         RCC_CFGR |= BIT1;
         
-        // enable pheripheral clock to timer. (Easily forgotten. Beginner mistake)
-        RCC_APB1ENR |= BIT1;
+        // enable pheripheral clock to timer3 (BIT1) and TIM14 (BIT8). (Easily forgotten. Beginner mistake)
+        RCC_APB1ENR |= (BIT1 | BIT8);
         
         RCC_APB2ENR |= BIT9; // enable clock to adc
-        RCC_CR |= BIT0; // turn on HSI clock (For ADC)
+        RCC_CR |= BIT0; // turn on HSI clock (For ADC) // TODO: I could use the prescaled main clock...
         while(!(RCC_CR & BIT1)); // wait till HSI is stable
         
 }
@@ -76,7 +76,7 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER |= ( BIT8 | BIT13 | BIT6 | BIT7 | BIT15) ; // make PA4 an output (PA4 is PIN10 is BIT8), and PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7), PA7 AF (TIM3_CH2) Bit 15.
+	GPIOA_MODER = ( BIT0 | BIT9 | BIT13 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7), PA7 AF (TIM3_CH2) Bit 15.
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
         ADC_CR |= (BIT31); // set adcal	
 
@@ -90,9 +90,20 @@ int main()
         TIM3_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
         TIM3_CR1 |= BIT0 ; // start after updating registers!
 
-        // Set AF(AF1) en MODER to select PWM output on pin PA6 (Is the only option on this low-pincount stm32f030c4 device in SSOP20)
-	GPIOA_AFRL |= (BIT24 |BIT28); ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1, BIT28 is idem for PA7/TIM3ch2.
+        // Set AF(AF1) en MODER to select PWM output on pins
+	GPIOA_AFRL |= (BIT24 |BIT28 | BIT18); ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1, BIT28 is idem for PA7/TIM3ch2. And bit 18 for  AF4 on PA4: TIM14CH1 (PWM)
 	
+        //set up timer 14 for PWM
+        TIM14_PSC = 0; // prescaler. (48Mhz/psc+1=tim14clock)
+        TIM14_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM14_PSC+1)*TIM14_ARR)
+        TIM14_CCMR1 |= (BIT3 | BIT5 | BIT6 ) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5) preload enable. 
+        TIM14_CCER |= (BIT0) ; //  CC1E (bit 0) to enable output on ch1.
+        TIM14_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
+        TIM14_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
+        TIM14_CR1 |= BIT0 ; // start after updating registers!
+        
+
+
         // Wait for ADCAL to be zero again:
         while (ADC_CR & (BIT31));
         // then power up and set up adc:
@@ -129,12 +140,14 @@ int main()
 	while(1)
 	{	
 	     
-	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2.
+	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2 and TIM14Ch1
 	     TIM3_CCR2 = i;
+	     TIM14_CCR1 = 2048-i;
 	     delay(1000);
 	     }
-	     for(int i=2048;i>0;i--){ // fade LED on TIM3CH2.
+	     for(int i=2048;i>0;i--){ // fade LEDs
 	     TIM3_CCR2 = i;
+	     TIM14_CCR1 = 2048-i;
 	     delay(1000);
 	     }
 	   
@@ -147,10 +160,7 @@ int main()
 
 
 void ADC_Handler(){
-        /* toggle LED when handler gets run. (To check samplerate)
-        GPIOA_ODR |= BIT4;
-        GPIOA_ODR &= ~BIT4;
-        */
+      
         static int pwm=0; // keep between invocations
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
@@ -162,6 +172,7 @@ void ADC_Handler(){
                 }
                 
         // TODO: enable & check OVF.	
+        // TODO: Set an ouput before and clear it after running this handler. (To time handler and check sample rate)
 }
 
 
