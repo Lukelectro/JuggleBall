@@ -76,7 +76,7 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER = ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15.
+	GPIOA_MODER = ( BIT0 | BIT9 | BIT13 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA3/pin9 analog (Bit6 and 7), PA7 AF (TIM3_CH2) Bit 15.
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
         ADC_CR |= (BIT31); // set adcal	
 
@@ -160,10 +160,8 @@ int main()
 
 
 void ADC_Handler(){
-        GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
-        
+      
         static int pwm=0; // keep between invocations
-        
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR; // read adc result for debugger/global use.
@@ -174,8 +172,7 @@ void ADC_Handler(){
                 }
                 
         // TODO: enable & check OVF.	
-        GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
-	
+        // TODO: Set an ouput before and clear it after running this handler. (To time handler and check sample rate)
 }
 
 

@@ -18,20 +18,12 @@ LD=arm-none-eabi-ld
 # Luke: added c99 flag
 CCFLAGS=-mcpu=cortex-m0 -mthumb -g -std=c99
 
-SIZE= arm-none-eabdi-size
-
 # List the object files involved in this project
 OBJS=	init.o \
 	main.o 
 
 # The default 'target' (output) is main.elf and it depends on the object files being there.
 # These object files are linked together to create main.elf
-
-# added
-#but it does not work. Goal is to auto-reflash the uC on succesfull recompile, maybe also start a debugger.
-#all: main.elf SIZE flash
-# /added
-
 main.elf : $(OBJS)
 	$(LD) $(OBJS) $(LIBSPEC) -lgcc -T linker_script.ld --cref -Map main.map -nostartfiles -o main.elf
 # convert binary elf file to hex to help the stm32flash utility
