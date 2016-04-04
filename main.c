@@ -112,12 +112,12 @@ int main()
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
         
         // make rest of settings before starting conversion:
-        ADC_CHSELR = (BIT3); // Ch3 = PA3, on pin9. (Set up channels)
-        // It will scan all these channels, but it has only 1 data register for the result.
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
+        ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
+        // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
-                               // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        ADC_SMPR |= (BIT2 | BIT1); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk)     
+                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. (TODO: maybe don't automatically do this)
+        ADC_SMPR |= ( BIT1); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)     
         
         ADC_IER |= BIT2; // Enable end of conversion interrupt.
         
@@ -162,15 +162,20 @@ int main()
 void ADC_Handler(){
         GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
         
-        static int pwm=0; // keep between invocations
+        static int ch=0; // keep between invocations
+        static int pwm[3]; //TODO: Maybe make this an union with the TIMxx_CCRn registers so it is not copied?
+        static int setpoints[3]={SETPOINT,SETPOINT,SETPOINT};
         
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR; // read adc result for debugger/global use.
-                pwm += (SETPOINT-adcresult); // integrating comparator.
-                if (pwm<0) pwm= 0;
-                if (pwm>1024) pwm=1024; //max 50% D.
-                TIM3_CCR1 = pwm;
+                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.
+                if (pwm[ch]<0) pwm[ch]= 0;
+                if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
+                TIM3_CCR1 = pwm[3];
+                TIM3_CCR2 = pwm[2];
+                TIM14_CCR1 = pwm[1];
+                if (ch<3) ch++; else ch=0;
                 }
                 
         // TODO: enable & check OVF.	
