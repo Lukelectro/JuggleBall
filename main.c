@@ -76,7 +76,9 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER = ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15.
+	GPIOA_MODER = ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. 
+	
+	
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
         ADC_CR |= (BIT31); // set adcal	
 
@@ -114,12 +116,12 @@ int main()
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
+        ADC_CFGR1 |= (BIT12 ); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
-                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. (TODO: maybe don't automatically do this)
-        ADC_SMPR |= ( BIT1); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)     
+                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. (TODO: maybe do (n't) automatically do this)
+        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust   
         
-        ADC_IER |= BIT2; // Enable end of conversion interrupt.
+        ADC_IER |= BIT2 ; // Enable end of conversion interrupt (Bit2). 
         
         
         /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
@@ -142,13 +144,13 @@ int main()
 	     
 	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2 and TIM14Ch1
 	     TIM3_CCR2 = i;
-	     TIM14_CCR1 = 2048-i;
-	     delay(1000);
+	     //TIM14_CCR1 = 2048-i;
+	     delay(500);
 	     }
 	     for(int i=2048;i>0;i--){ // fade LEDs
 	     TIM3_CCR2 = i;
-	     TIM14_CCR1 = 2048-i;
-	     delay(1000);
+	     //TIM14_CCR1 = 2048-i;
+	     delay(500);
 	     }
 	   
 	     
@@ -169,16 +171,19 @@ void ADC_Handler(){
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR; // read adc result for debugger/global use.
-                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.
-                if (pwm[ch]<0) pwm[ch]= 0;
-                if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
-                TIM3_CCR1 = pwm[3];
-                TIM3_CCR2 = pwm[2];
-                TIM14_CCR1 = pwm[1];
-                if (ch<3) ch++; else ch=0;
+                
+                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.  // todo: this still does not work for multichannel...
+                if (pwm[ch]<0) pwm[ch]= 0; else if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
+                TIM3_CCR1 = pwm[2];
+                
+              //  TIM3_CCR2 = pwm[1];
+              // TIM14_CCR1 = pwm[0];
+                if(ch<3) ch++; else ch=0;
                 }
                 
-        // TODO: enable & check OVF.	
+        //if(ADC_ISR&(BIT4)) TIM14_CCR1=1240; // OVF monitoring (vlag Bit wordt gezet ook als interupt niet enabled is)
+                
+        ADC_CR |= (BIT2); // Set ADSTART to start next conversion (TODO: re-enable auto once sure no OVF)
         GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
 	
 }
