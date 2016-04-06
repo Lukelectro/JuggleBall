@@ -19,7 +19,9 @@ For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that t
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
 
-#define SETPOINT 947 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
+#define SETPOINT1 947 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
+#define SETPOINT2 946 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
+#define SETPOINT3 945 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
 
 void delay(int dly)
 {
@@ -116,9 +118,9 @@ int main()
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 ); // BIT12 set it to discard on overrun and overwrite with latest result 
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
-                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. (TODO: maybe do (n't) automatically do this)
+                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. (TODO: maybe automatically do this)
         ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust   
         
         ADC_IER |= BIT2 ; // Enable end of conversion interrupt (Bit2). 
@@ -141,7 +143,7 @@ int main()
 
 	while(1)
 	{	
-	     
+	    /* 
 	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2 and TIM14Ch1
 	     TIM3_CCR2 = i;
 	     //TIM14_CCR1 = 2048-i;
@@ -152,7 +154,7 @@ int main()
 	     //TIM14_CCR1 = 2048-i;
 	     delay(500);
 	     }
-	   
+	   */
 	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
@@ -165,25 +167,26 @@ void ADC_Handler(){
         GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
         
         static int ch=0; // keep between invocations
-        static int pwm[3]; //TODO: Maybe make this an union with the TIMxx_CCRn registers so it is not copied?
-        static int setpoints[3]={SETPOINT,SETPOINT,SETPOINT};
+        static int pwm[3];
+        static int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3}; // TODO: later to be set from main.
         
-        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
+        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR; // read adc result for debugger/global use.
                 
-                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.  // todo: this still does not work for multichannel...
+                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.  
+                // TODO: This gets out of sync sometimes. (Feedback from one ch controlling another. Not good.)
+                // Especially debugging throws it out of sync but sometimes after reset it is another ch as well.
+                
                 if (pwm[ch]<0) pwm[ch]= 0; else if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
                 TIM3_CCR1 = pwm[2];
-                
-              //  TIM3_CCR2 = pwm[1];
-              // TIM14_CCR1 = pwm[0];
-                if(ch<3) ch++; else ch=0;
+                TIM3_CCR2 = pwm[1];
+              	TIM14_CCR1 = pwm[0];
+                if(ch<2) ch++; else ch=0;
                 }
                 
         //if(ADC_ISR&(BIT4)) TIM14_CCR1=1240; // OVF monitoring (vlag Bit wordt gezet ook als interupt niet enabled is)
                 
-        ADC_CR |= (BIT2); // Set ADSTART to start next conversion (TODO: re-enable auto once sure no OVF)
         GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
 	
 }
