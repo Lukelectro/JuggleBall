@@ -1,25 +1,34 @@
 /*
 NOTE/IDEA:
 Clock ADC with dedictated 14Mhz clock. Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
-Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!)TODO: That's for one ch. For 3ch 71.5/3=23.8 so maybe try 28.5 or 13.5clks sample time.
+Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!) That's for one ch. For 3ch the interrupt will trigger at the same rate but per channel samplerate will be lower. (Maybe sample slower to make sure ISR can keep up, and then check what effect that has on voltage/current regulation)
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
 
 Goal: 3ch PWM LED switchmode current source.
 WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
 WORKS:  Subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
-TODO:   subgoal 3: Multichannel ADC measurements. (note: samplerate should be >150Khz for each ch, so decrease sampletime and/or trigger from a timer)
-        subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA)
-        Subgaol 5: Close the feedback loop. All 3. Not at once. And maybe test with resistors first so the led's stay intact.
+WORKS:  subgoal 3: Multichannel ADC measurements. 
+WORKS:  subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA):
+WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first so the led's stay intact.
 
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
+
+TODO: Cleanup comments/notes etc.
+Next goal: Read MPU-6050 and control the LED's with it.
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
 
-#define SETPOINT 947 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
+//MAX setpoints 
+//(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
+//(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
+//(2^12/3v3 * 0.02 * 15)= 372 -- 20mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor.
+#define SETPOINT1 372 
+#define SETPOINT2 372 
+#define SETPOINT3 372 
 
 void delay(int dly)
 {
@@ -65,8 +74,8 @@ void initClock()
 
 
 
-volatile int adcresult; // can be read in debugger too. Global because set from ISR.
-	
+volatile int adcresult; // can be read in debugger too.
+int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};	
 
 
 int main()
@@ -113,14 +122,14 @@ int main()
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
         
         // make rest of settings before starting conversion:
-        ADC_CHSELR = (BIT3); // Ch3 = PA3, on pin9. (Set up channels)
-        // It will scan all these channels, but it has only 1 data register for the result.
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result (Since I'm only using one ch)
+        ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
+        // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
-                               // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        ADC_SMPR |= (BIT2 | BIT1); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk)     
+                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. 
+        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust so no OVF   
         
-        ADC_IER |= BIT2; // Enable end of conversion interrupt.
+        ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
         
         /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
@@ -132,7 +141,7 @@ int main()
         
         ISER |= (BIT12); // Enable IRQ12, (That's the adc)
         IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
-        //NVIC is not well documented imho, but the above is tested and WORKS. Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+        //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
@@ -140,18 +149,28 @@ int main()
 
 	while(1)
 	{	
-	     
-	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2 and TIM14Ch1
-	     TIM3_CCR2 = i;
-	     TIM14_CCR1 = 2048-i;
-	     delay(1000);
-	     }
-	     for(int i=2048;i>0;i--){ // fade LEDs
-	     TIM3_CCR2 = i;
-	     TIM14_CCR1 = 2048-i;
-	     delay(1000);
-	     }
-	   
+	
+		//Fade R,G,B.
+	   	setpoints[0]=0;
+	   	setpoints[1]=0;
+	   	setpoints[2]=0;
+	   	
+	   	for(int j = 0; j<3;j++){
+			for(int i=0;i<SETPOINT1;i++){
+			setpoints[j]=i;
+			delay(10000);
+			}	    
+	    
+	   		for(int i=SETPOINT1;i>=0;i--){
+			setpoints[j]=i;
+			delay(10000);
+			}
+		}
+		
+		
+		
+	
+	    
 	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
@@ -163,18 +182,40 @@ int main()
 void ADC_Handler(){
         GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
         
-        static int pwm=0; // keep between invocations
+        static int ch=0; // keep between invocations
+        static int pwm[3];
+        //static int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3}; // TODO: later to be set from main.
+        //static int OVFs = 0, resyncs=0; // for debug purposes.
         
-        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOS when the sequence is only 1 conversion long)
+        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
                 {
                 adcresult=ADC_DR; // read adc result for debugger/global use.
-                pwm += (SETPOINT-adcresult); // integrating comparator.
-                if (pwm<0) pwm= 0;
-                if (pwm>1024) pwm=1024; //max 50% D.
-                TIM3_CCR1 = pwm;
-                }
                 
-        // TODO: enable & check OVF.	
+                pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.  
+                // This gets out of sync sometimes. (Feedback from one ch controlling another. Not good.)
+                // Especially debugging throws it out of sync but sometimes after reset it is another ch as well.
+            	// (Another ADC interrupt before ch is incremented, OK, for debug I understand how that can happen, but why it hapens after reset?)
+                
+                if (pwm[ch]<0) pwm[ch]= 0; else if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
+                TIM3_CCR1 = pwm[2];
+                TIM3_CCR2 = pwm[1];
+              	TIM14_CCR1 = pwm[0];
+                //if(ch<2) ch++; else ch=0; // could do this entirely with OESEQ and just ch++ here... Is slightly faster
+                ch++;
+                }
+        /*        
+        if(ADC_ISR&(BIT4)){ // OVF monitoring (flag is set even if OVF interrupt is not enabled)
+        	OVFs++; 
+        	ADC_ISR&=BIT4; // reset flag	
+        }
+        */
+        
+        if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync.
+		//if(ch!=0) resyncs++; 
+        	ch=0; 
+        	ADC_ISR&=(BIT3); // reset flag
+        }
+        
         GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
 	
 }
