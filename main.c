@@ -9,19 +9,26 @@ Goal: 3ch PWM LED switchmode current source.
 WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
 WORKS:  Subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
 WORKS:  subgoal 3: Multichannel ADC measurements. 
-TODO:   subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA):
-        Subgaol 5: Close the feedback loops. And maybe test with resistors first so the led's stay intact.
+WORKS:  subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA):
+WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first so the led's stay intact.
 
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
+
+TODO: Cleanup comments/notes etc.
+Next goal: Read MPU-6050 and control the LED's with it.
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
 
-#define SETPOINT1 947 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
-#define SETPOINT2 946 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
-#define SETPOINT3 945 // (2^10/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 10 bit adc 10k/1k8 div.
+//MAX setpoints 
+//(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
+//(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
+//(2^12/3v3 * 0.02 * 15)= 372 -- 20mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor.
+#define SETPOINT1 372 
+#define SETPOINT2 372 
+#define SETPOINT3 372 
 
 void delay(int dly)
 {
@@ -67,8 +74,8 @@ void initClock()
 
 
 
-volatile int adcresult; // can be read in debugger too. Global because set from ISR.
-	
+volatile int adcresult; // can be read in debugger too.
+int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};	
 
 
 int main()
@@ -143,18 +150,28 @@ int main()
 
 	while(1)
 	{	
-	    /* 
-	     for(int i=0;i<2048;i++){ // fade LED on TIM3CH2 and TIM14Ch1
-	     TIM3_CCR2 = i;
-	     //TIM14_CCR1 = 2048-i;
-	     delay(500);
-	     }
-	     for(int i=2048;i>0;i--){ // fade LEDs
-	     TIM3_CCR2 = i;
-	     //TIM14_CCR1 = 2048-i;
-	     delay(500);
-	     }
-	   */
+	
+		//Fade R,G,B.
+	   	setpoints[0]=0;
+	   	setpoints[1]=0;
+	   	setpoints[2]=0;
+	   	
+	   	for(int j = 0; j<3;j++){
+			for(int i=0;i<SETPOINT1;i++){
+			setpoints[j]=i;
+			delay(10000);
+			}	    
+	    
+	   		for(int i=SETPOINT1;i>=0;i--){
+			setpoints[j]=i;
+			delay(10000);
+			}
+		}
+		
+		
+		
+	
+	    
 	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
@@ -168,8 +185,8 @@ void ADC_Handler(){
         
         static int ch=0; // keep between invocations
         static int pwm[3];
-        static int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3}; // TODO: later to be set from main.
-        static int OVFs = 0, resyncs=0; // for debug purposes.
+        //static int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3}; // TODO: later to be set from main.
+        //static int OVFs = 0, resyncs=0; // for debug purposes.
         
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
                 {
@@ -184,15 +201,18 @@ void ADC_Handler(){
                 TIM3_CCR1 = pwm[2];
                 TIM3_CCR2 = pwm[1];
               	TIM14_CCR1 = pwm[0];
-                if(ch<2) ch++; else ch=0;
+                //if(ch<2) ch++; else ch=0; // could do this entirely with OESEQ and just ch++ here... Is slightly faster
+                ch++;
                 }
-                
+        /*        
         if(ADC_ISR&(BIT4)){ // OVF monitoring (flag is set even if OVF interrupt is not enabled)
         	OVFs++; 
         	ADC_ISR&=BIT4; // reset flag	
         }
+        */
+        
         if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync.
-		if(ch!=0) resyncs++; 
+		//if(ch!=0) resyncs++; 
         	ch=0; 
         	ADC_ISR&=(BIT3); // reset flag
         }
