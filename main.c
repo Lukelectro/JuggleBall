@@ -29,6 +29,7 @@ Next goal: Read MPU-6050 and control the LED's with it.
 #define SETPOINT1 372 
 #define SETPOINT2 372 
 #define SETPOINT3 372 
+#define SETPOINT 372
 
 void delay(int dly)
 {
@@ -151,25 +152,32 @@ int main()
 	{	
 	
 		//Fade R,G,B.
-	   	setpoints[0]=0;
-	   	setpoints[1]=0;
-	   	setpoints[2]=0;
+	   	setpoints[0]=0; //G
+	   	setpoints[1]=SETPOINT; //R
+	   	setpoints[2]=0; //B
 	   	
-	   	for(int j = 0; j<3;j++){
-			for(int i=0;i<SETPOINT1;i++){
-			setpoints[j]=i;
-			delay(10000);
-			}	    
+	
+		for(int i=0;i<SETPOINT;i++){
+		setpoints[1]=SETPOINT-i;
+		setpoints[2]=i;
+		delay(5000);
+		}	    
 	    
-	   		for(int i=SETPOINT1;i>=0;i--){
-			setpoints[j]=i;
-			delay(10000);
-			}
-		}
-		
-		
+	
+		for(int i=0;i<SETPOINT;i++){
+		setpoints[2]=SETPOINT-i;
+		setpoints[0]=i;
+		delay(5000);
+		}	    
+	
 		
 	
+		for(int i=0;i<SETPOINT;i++){
+		setpoints[0]=SETPOINT-i;
+		setpoints[1]=i;
+		delay(5000);
+		}	    
+		
 	    
 	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
