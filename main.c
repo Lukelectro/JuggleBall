@@ -15,7 +15,7 @@ WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 
 TODO: Cleanup comments/notes etc.
-Next goal: Read MPU-6050 and control the LED's with it.
+Next goal: Read MPU-6050 and control the LED's with it. The slave address of the MPU-60X0 is b110100X, with the X set by AD0. (That's7 bits, nr 8 is R/!W)
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
@@ -30,6 +30,8 @@ Next goal: Read MPU-6050 and control the LED's with it.
 #define SETPOINT2 372 
 #define SETPOINT3 372 
 #define SETPOINT 372
+
+#define MPU_ADR 0b11010000
 
 void delay(int dly)
 {
@@ -64,8 +66,9 @@ void initClock()
         // set PLL as system clock source 
         RCC_CFGR |= BIT1;
         
-        // enable pheripheral clock to timer3 (BIT1) and TIM14 (BIT8). (Easily forgotten. Beginner mistake)
-        RCC_APB1ENR |= (BIT1 | BIT8);
+        RCC_CFGR3 |= (BIT4) ; // select system clock as I2C clock.
+        // enable pheripheral clock to timer3 (BIT1), TIM14 (BIT8), and I2C1 (BIT21).
+        RCC_APB1ENR |= (BIT1 | BIT8 | BIT21);
         
         RCC_APB2ENR |= BIT9; // enable clock to adc
         RCC_CR |= BIT0; // turn on HSI clock (For ADC) // TODO: I could use the prescaled main clock...
@@ -86,7 +89,14 @@ int main()
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
-	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15) ; // make PA0 an output (Pin6, BIT1), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. 
+	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
+	GPIOA_PUPDR |= (BIT18|BIT20) ; // Pull ups voor I2C. (Already present on MPU6050 module)
+	GPIOA_OTYPER |= (BIT9 |BIT10); // Maybe not needed but switch to Open Drain on I2C pins (But those are connected to the I2V module and not to GPIO so this should have no effect)
+	
+	//Set up I2C:
+	I2C1_TIMINGR = 0x50330309; //calculated from tables in datasheet.
+	// 0x00B01A4B; /*from datasheet code example: set up timings for fast Mode @400kHz with I2CCLK = 48MHz, rise time = 140ns, fall time = 40ns */
+	I2C1_CR1 |= BIT0; // enable I2C1 module
 	
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
         ADC_CR |= (BIT31); // set adcal	
@@ -103,6 +113,7 @@ int main()
 
         // Set AF(AF1) en MODER to select PWM output on pins
 	GPIOA_AFRL |= (BIT24 |BIT28 | BIT18); ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1, BIT28 is idem for PA7/TIM3ch2. And bit 18 for  AF4 on PA4: TIM14CH1 (PWM)
+	GPIOA_AFRH |= (BIT6 | BIT10); // AF4 for PA9 and PA10 (I2C SCL resp SDA)
 	
         //set up timer 14 for PWM
         TIM14_PSC = 0; // prescaler. (48Mhz/psc+1=tim14clock)
@@ -148,9 +159,17 @@ int main()
         
         ADC_CR |= (BIT2); // Set ADSTART to start conversion
 
+	int dummy; // XXX
 	while(1)
 	{	
-	
+		// spiekbriefje: I2C_CR2 |= (NBYTES << 23)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
+		// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
+		I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR); 
+		I2C1_TXDR = 0x00;
+		I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
+		
+		dummy = I2C1_RXDR;
+		
 		//Fade R,G,B.
 	   	setpoints[0]=0; //G
 	   	setpoints[1]=SETPOINT; //R
