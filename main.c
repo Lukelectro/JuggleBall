@@ -82,6 +82,32 @@ volatile int adcresult; // can be read in debugger too.
 int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};	
 
 
+// spiekbriefje: I2C_CR2 |= (NBYTES << 23)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
+// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
+		
+int MPU_Read(int addr){
+	I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR | BIT10); 
+	//while (!(I2C1_ISR & BIT0));// wait for txe flag before writing new data to txdr... (Waits forever, while TXE should be 1 after reset... TODO:fix)
+	I2C1_TXDR = addr&0xFF;
+	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
+		
+	//while (!(I2C1_ISR & BIT2));//wait for completed read / later do this in interrupt (TODO: Hangs. Fix)
+	return I2C1_RXDR;	
+}
+
+void MPU_Write(int addr, int val){
+	I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR); 
+		
+	while (!(I2C1_ISR & (BIT0)));// wait for txe flag before writing new data to txdr...
+	I2C1_TXDR = addr&0xFF;
+	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
+	while (!(I2C1_ISR & (BIT0)));// wait for txe flag low before writing new data to txdr...
+	I2C1_TXDR = val&0xFF;
+	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
+	
+}
+
+
 int main()
 {
 	initClock();
@@ -162,13 +188,7 @@ int main()
 	int dummy; // XXX
 	while(1)
 	{	
-		// spiekbriefje: I2C_CR2 |= (NBYTES << 23)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
-		// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
-		I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR); 
-		I2C1_TXDR = 0x00;
-		I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
-		
-		dummy = I2C1_RXDR;
+		dummy = MPU_Read(117); // 117 should echo own adr.
 		
 		//Fade R,G,B.
 	   	setpoints[0]=0; //G
@@ -176,14 +196,14 @@ int main()
 	   	setpoints[2]=0; //B
 	   	
 	
-		for(int i=0;i<SETPOINT;i++){
+		for(int i=0;i<=SETPOINT;i++){
 		setpoints[1]=SETPOINT-i;
 		setpoints[2]=i;
 		delay(5000);
 		}	    
 	    
 	
-		for(int i=0;i<SETPOINT;i++){
+		for(int i=0;i<=SETPOINT;i++){
 		setpoints[2]=SETPOINT-i;
 		setpoints[0]=i;
 		delay(5000);
@@ -191,7 +211,7 @@ int main()
 	
 		
 	
-		for(int i=0;i<SETPOINT;i++){
+		for(int i=0;i<=SETPOINT;i++){
 		setpoints[0]=SETPOINT-i;
 		setpoints[1]=i;
 		delay(5000);
