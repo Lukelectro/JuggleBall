@@ -1,6 +1,7 @@
 void init(void);
 void Default_Handler(void);
 extern void ADC_Handler(void); //added
+extern void I2C_Handler(void); //added
 extern int main(void);         //added
 
 // The following are 'declared' in the linker script
@@ -52,7 +53,7 @@ const void * Vectors[] __attribute__((section(".vectors"))) ={
 	Default_Handler, 	/* 20: TIM15 */
 	Default_Handler, 	/* 21: TIM16 */
 	Default_Handler, 	/* 22: TIM17 */
-	Default_Handler, 	/* 23: I2C1 */
+	I2C_Handler, 		/* 23: I2C1 */ // changed!
 	Default_Handler, 	/* 24: I2C2 */
 	Default_Handler, 	/* 25: SPI1 */
 	Default_Handler, 	/* 26: SPI2 */

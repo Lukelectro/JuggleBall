@@ -82,29 +82,69 @@ volatile int adcresult; // can be read in debugger too.
 int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};	
 
 
-// spiekbriefje: I2C_CR2 |= (NBYTES << 23)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
+// spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
 		
-int MPU_Read(int addr){
+int MPU_Read(int addr){ // FIXME
+	//I2C1_ISR|=BIT0; // Set TXE / flush TXDR this prevents it from hanging but also from working correctly
+
 	I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR | BIT10); 
-	//while (!(I2C1_ISR & BIT0));// wait for txe flag before writing new data to txdr... (Waits forever, while TXE should be 1 after reset... TODO:fix)
+	
+	I2C1_CR2 |= (BIT13) ; // Send a start
+	while(I2C1_CR2 & (BIT13)) ; // wait 'till it is sent
+	
+	
+	while (!(I2C1_ISR & BIT0));// wait for txe flag before writing new data to txdr... 
 	I2C1_TXDR = addr&0xFF;
-	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
 		
-	//while (!(I2C1_ISR & BIT2));//wait for completed read / later do this in interrupt (TODO: Hangs. Fix)
+	while (!(I2C1_ISR & BIT2));//wait for completed read / later do this in interrupt 
 	return I2C1_RXDR;	
 }
 
-void MPU_Write(int addr, int val){
-	I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR); 
+void MPU_Write(int addr, int val){ // FIXME
+	I2C1_CR2 |= (BIT25 | (2<<16) | MPU_ADR); 
 		
 	while (!(I2C1_ISR & (BIT0)));// wait for txe flag before writing new data to txdr...
 	I2C1_TXDR = addr&0xFF;
 	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
-	while (!(I2C1_ISR & (BIT0)));// wait for txe flag low before writing new data to txdr...
+	while (!(I2C1_ISR & (BIT0)));// wait for txe flag before writing new data to txdr...
 	I2C1_TXDR = val&0xFF;
 	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
 	
+}
+
+void i2c_write_byte(int addr, int data) { // FIXME
+    I2C1_CR2 &= ~(BIT10);
+    I2C1_CR2 |= (BIT13) |  (2 << 16) | MPU_ADR;
+    while(I2C1_CR2 & BIT13);
+    I2C1_TXDR = addr;
+    while (!(I2C1_ISR & BIT0));
+
+    I2C1_TXDR = data;
+    while (!(I2C1_ISR & BIT0));
+    I2C1_CR2 |= (BIT14); // manualy generate stop?
+    while(I2C1_CR2 & BIT14);
+}
+
+int i2c_read_byte(int addr) { // FIXME
+    int data = 0;
+
+    I2C1_CR2 &= ~(BIT10); // write (!)
+    I2C1_CR2 &= ~(0xff << 16); // clear nbytes?
+    I2C1_CR2 |= BIT13 | (1 << 16) | MPU_ADR; // send start AND set nbytes & set adr.
+    while(I2C1_CR2 & BIT13); // why does it hang here? while that bit clearly gets back to zero as I see start+slaveadr on 'scope...
+    
+    I2C1_TXDR = addr;
+    while (!(I2C1_ISR & BIT0));
+
+    I2C1_CR2 |= BIT10;
+    I2C1_CR2 |= BIT13 | (1 << 16);
+    while(I2C1_CR2 & BIT13);
+    while (!(I2C1_ISR & BIT2)); // wait till data is rec'd but this waits forever.
+    data = I2C1_RXDR;
+    I2C1_CR2 |= (BIT14); // manualy generate stop?
+    while(I2C1_CR2 & BIT14);
+    return data;
 }
 
 
@@ -119,9 +159,11 @@ int main()
 	GPIOA_PUPDR |= (BIT18|BIT20) ; // Pull ups voor I2C. (Already present on MPU6050 module)
 	GPIOA_OTYPER |= (BIT9 |BIT10); // Maybe not needed but switch to Open Drain on I2C pins (But those are connected to the I2V module and not to GPIO so this should have no effect)
 	
+	
 	//Set up I2C:
-	I2C1_TIMINGR = 0x50330309; //calculated from tables in datasheet.
-	// 0x00B01A4B; /*from datasheet code example: set up timings for fast Mode @400kHz with I2CCLK = 48MHz, rise time = 140ns, fall time = 40ns */
+	GPIOA_OSPEEDR |= 0x0FC00000; // High speed IO for I2C (?)
+	I2C1_TIMINGR = 0x50330309; //0x50330309; //calculated from tables in datasheet.
+	// 0x00B01A4B; Wrong: /*from datasheet code example: set up timings for fast Mode @400kHz with I2CCLK = 48MHz, rise time = 140ns, fall time = 40ns */
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
@@ -170,6 +212,8 @@ int main()
         ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
         
+        
+        /// ***interrupts*** ///
         /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
         NVIC_EnableIRQ(ADC1_COMP_IRQn); // enable ADC interrupt
         NVIC_SetPriority(ADC1_COMP_IRQn,2); // set priority (to 2)
@@ -177,9 +221,17 @@ int main()
         I could just use them... But I don't :)
         */
         
-        ISER |= (BIT12); // Enable IRQ12, (That's the adc)
+         // TODO: disabled for testing
+        //ISER |= (BIT12); // Enable IRQ12, (That's the adc)
         IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
         //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+        
+        // TODO: disabled for testing
+	//I2C interrupt, first enable in NVIC then in I2C1 registers
+        //ISER |= (BIT23); // Bit23 is I2C1
+        IPR5 |= (100<<24) ; // IPR(4n+3) dus IPR5, Bit 31:24
+	I2C1_CR1 |= (BIT7|BIT6|BIT5|BIT4|BIT3|BIT2|BIT1); // enable all interrupts
+        
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
@@ -188,7 +240,21 @@ int main()
 	int dummy; // XXX
 	while(1)
 	{	
-		dummy = MPU_Read(117); // 117 should echo own adr.
+		
+		int x,y,z;
+		//dummy = MPU_Read(117); // 117 should echo own adr.
+		dummy=i2c_read_byte(117);
+		//dummy = MPU_Read(107); // 107 is power management register
+		dummy=i2c_read_byte(107);
+		i2c_write_byte(107, 0x00);
+		dummy = i2c_read_byte(107); // 107 is power management register
+		/*
+		x=MPU_Read(59)<<8&MPU_Read(60);
+		y=MPU_Read(61)<<8&MPU_Read(62);
+		z=MPU_Read(63)<<8&MPU_Read(64);
+		*/
+		x=i2c_read_byte(60);
+		
 		
 		//Fade R,G,B.
 	   	setpoints[0]=0; //G
@@ -268,5 +334,50 @@ void ADC_Handler(){
 }
 
 
+void I2C_Handler(){
 
+// TODO: handlers for each flagbit.
+
+//spiekbriefje: I2C1_ISR: BIT10 = OVeRrun (underrun), BIT9 = ARbitrationLOst, 8= BusERR, BIT7= Transfer Complete Reload, BIT6 = TransferComplete, bit5 =STOPF
+// bit4= NACKF, bit2=RXNE (RX Not Empty), bit1=TXIS (TX buffer empty, write needed!), BIT0=TXE (TX empty)
+
+if(I2C1_ISR&BIT10){ // OVR
+
+}
+if(I2C1_ISR&BIT9){ // ARLO
+
+}
+if(I2C1_ISR&BIT8){ // BERR
+
+}
+if(I2C1_ISR&BIT7){ //TCR
+
+}
+if(I2C1_ISR&BIT6){ // TC
+
+}
+if(I2C1_ISR&BIT5){ // STOPF
+
+}
+if(I2C1_ISR&BIT4){ // NACKF
+
+}
+if(I2C1_ISR&BIT2){ //RXNE
+
+}
+
+if(I2C1_ISR&BIT1){ //TXIS
+
+}
+
+if(I2C1_ISR&BIT0){ //TXE
+
+}
+
+
+int dummy = I2C1_ISR;
+
+//I2C1_ICR |= (BIT10)|(BIT9)|(BIT8)|BIT5|BIT4; // clear all flags
+
+}
 
