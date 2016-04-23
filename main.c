@@ -215,23 +215,30 @@ int main()
 		y=(i2c_read_byte(61)<<8)+i2c_read_byte(62);
 		z=(i2c_read_byte(63)<<8)+i2c_read_byte(64);
 		
+		// because it is 2's complement, if bit 15 is set then bits 31 to 15 should also be set (To convert from 16 bit signed int to 32 bit signed int)
+		if(x&1<<15) x|=0xFFFF0000;
+		if(y&1<<15) y|=0xFFFF0000;
+		if(z&1<<15) z|=0xFFFF0000;
+		
 		//scale XYZ to SETPOINT as max
 		float g,r,b;
-		g=x*SETPOINT/(1<<16);
-		r=y*SETPOINT/(1<<16);
-		b=z*SETPOINT/(1<<16);
+		g=x*SETPOINT/(1<<15);
+		r=y*SETPOINT/(1<<15);
+		b=z*SETPOINT/(1<<15);
 		
 		if(g>SETPOINT) g=SETPOINT; // crowbar (force safe value)
 		if(r>SETPOINT) r=SETPOINT; // crowbar (force safe value)
 		if(b>SETPOINT) b=SETPOINT; // crowbar (force safe value)
-		if(g<0) g=0; // crowbar (force safe value)
-		if(r<0) r=0; // crowbar (force safe value)
-		if(b<0) b=0; // crowbar (force safe value)
+		if(g<0) g=0; // crowbar (force safe value / discard if below zero)
+		if(r<0) r=0; // crowbar (force safe value / discard if below zero)
+		if(b<0) b=0; // crowbar (force safe value / discard if below zero)
 		
 		
 		setpoints[1]=r;
 		setpoints[0]=g;
 		setpoints[2]=b;
+		
+		//TODO: Think of a nice way to use below zero values / use the acellerometer (and gyro?) in a juggle ball.
 		
 		/*
 		//Fade R,G,B.
