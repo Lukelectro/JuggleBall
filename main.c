@@ -84,36 +84,39 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 
 // spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
-		
-int MPU_Read(int addr){ // FIXME
-	//I2C1_ISR|=BIT0; // Set TXE / flush TXDR this prevents it from hanging but also from working correctly
 
-	I2C1_CR2 |= (BIT25 | (1<<16) | MPU_ADR | BIT10); 
-	
-	I2C1_CR2 |= (BIT13) ; // Send a start
-	while(I2C1_CR2 & (BIT13)) ; // wait 'till it is sent
-	
-	
-	while (!(I2C1_ISR & BIT0));// wait for txe flag before writing new data to txdr... 
-	I2C1_TXDR = addr&0xFF;
-		
-	while (!(I2C1_ISR & BIT2));//wait for completed read / later do this in interrupt 
-	return I2C1_RXDR;	
+int i2c_read_byte(int addr) { // FIXME (Hangs in while loop checkint CR2 bit when ADC interrupt is enabed)
+    int data = 0;
+
+    //I2C1_CR2 &= ~(BIT10); // write (!)
+    //I2C1_CR2 &= ~(0xff << 16); // clear nbytes?
+    //I2C1_CR2 |= BIT13 | (1 << 16) | MPU_ADR; // send start AND set nbytes & set adr.
+    // above 3 lines can get much shortened and no RMW:
+    I2C1_CR2 = (BIT13)|(1<<16)|(MPU_ADR); // Write 1 byte to MPU_ADR and sent start
+    
+    
+    //while(I2C1_CR2 & BIT13); // is it realy necessary to wait here untill the START condition is sent? Nope. Let's get rid of this line
+    
+    I2C1_TXDR = addr;
+    while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
+
+    //I2C1_CR2 |= BIT10; // read
+    //I2C1_CR2 |= BIT13 | (1 << 16); // Start + Nbytes
+    // above 2 can be shortened too, to 1 atomic operation:
+    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | MPU_ADR | BIT25;
+    
+    //while(I2C1_CR2 & BIT13); // wait 'till start is sent (Not needed)
+    while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
+    data = I2C1_RXDR;
+    
+    //I2C1_CR2 |= (BIT14); // manualy generate stop (Could auto-generate it!)
+    //while(I2C1_CR2 & BIT14);
+    // above 2 no longer needed because of stop auto generation (CR2 bit 25)
+    
+    return data;
 }
 
-void MPU_Write(int addr, int val){ // FIXME
-	I2C1_CR2 |= (BIT25 | (2<<16) | MPU_ADR); 
-		
-	while (!(I2C1_ISR & (BIT0)));// wait for txe flag before writing new data to txdr...
-	I2C1_TXDR = addr&0xFF;
-	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
-	while (!(I2C1_ISR & (BIT0)));// wait for txe flag before writing new data to txdr...
-	I2C1_TXDR = val&0xFF;
-	I2C1_CR2 |= (BIT13) ; // lets see, the other bits can't be set when START is set so let's set it seperately and see if that helps
-	
-}
-
-void i2c_write_byte(int addr, int data) { // FIXME
+void i2c_write_byte(int addr, int data) { // FIXME (Hangs in while when ADC interrupt is enabed)
     I2C1_CR2 &= ~(BIT10);
     I2C1_CR2 |= (BIT13) |  (2 << 16) | MPU_ADR;
     while(I2C1_CR2 & BIT13);
@@ -122,31 +125,9 @@ void i2c_write_byte(int addr, int data) { // FIXME
 
     I2C1_TXDR = data;
     while (!(I2C1_ISR & BIT0));
-    I2C1_CR2 |= (BIT14); // manualy generate stop?
+    I2C1_CR2 |= (BIT14); // manualy generate stop
     while(I2C1_CR2 & BIT14);
 }
-
-int i2c_read_byte(int addr) { // FIXME
-    int data = 0;
-
-    I2C1_CR2 &= ~(BIT10); // write (!)
-    I2C1_CR2 &= ~(0xff << 16); // clear nbytes?
-    I2C1_CR2 |= BIT13 | (1 << 16) | MPU_ADR; // send start AND set nbytes & set adr.
-    while(I2C1_CR2 & BIT13); // why does it hang here? while that bit clearly gets back to zero as I see start+slaveadr on 'scope...
-    
-    I2C1_TXDR = addr;
-    while (!(I2C1_ISR & BIT0));
-
-    I2C1_CR2 |= BIT10;
-    I2C1_CR2 |= BIT13 | (1 << 16);
-    while(I2C1_CR2 & BIT13);
-    while (!(I2C1_ISR & BIT2)); // wait till data is rec'd but this waits forever.
-    data = I2C1_RXDR;
-    I2C1_CR2 |= (BIT14); // manualy generate stop?
-    while(I2C1_CR2 & BIT14);
-    return data;
-}
-
 
 int main()
 {
@@ -249,11 +230,11 @@ int main()
 		i2c_write_byte(107, 0x00);
 		dummy = i2c_read_byte(107); // 107 is power management register
 		/*
-		x=MPU_Read(59)<<8&MPU_Read(60);
-		y=MPU_Read(61)<<8&MPU_Read(62);
-		z=MPU_Read(63)<<8&MPU_Read(64);
+		x=MPU_Read(59)<<8&MPU_Read(59);
+		y=MPU_Read(61)<<8&MPU_Read(61);
+		z=MPU_Read(63)<<8&MPU_Read(63);
 		*/
-		x=i2c_read_byte(60);
+		x=i2c_read_byte(59);
 		
 		
 		//Fade R,G,B.
