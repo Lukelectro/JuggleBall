@@ -21,7 +21,6 @@ Next goal: Read MPU-6050 and control the LED's with it. The slave address of the
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
 // I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
 
-
 //MAX setpoints 
 //(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
 //(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
@@ -212,9 +211,29 @@ int main()
 		y=MPU_Read(61)<<8&MPU_Read(61);
 		z=MPU_Read(63)<<8&MPU_Read(63);
 		*/
-		x=i2c_read_byte(59);
+		x=(i2c_read_byte(59)<<8)+i2c_read_byte(60); // TODO: It is read as bytes but was a 16 bit 2-s complement (signed) variable. So put a better conversion here.
+		y=(i2c_read_byte(61)<<8)+i2c_read_byte(62);
+		z=(i2c_read_byte(63)<<8)+i2c_read_byte(64);
+		
+		//scale XYZ to SETPOINT as max
+		float g,r,b;
+		g=x*SETPOINT/(1<<16);
+		r=y*SETPOINT/(1<<16);
+		b=z*SETPOINT/(1<<16);
+		
+		if(g>SETPOINT) g=SETPOINT; // crowbar (force safe value)
+		if(r>SETPOINT) r=SETPOINT; // crowbar (force safe value)
+		if(b>SETPOINT) b=SETPOINT; // crowbar (force safe value)
+		if(g<0) g=0; // crowbar (force safe value)
+		if(r<0) r=0; // crowbar (force safe value)
+		if(b<0) b=0; // crowbar (force safe value)
 		
 		
+		setpoints[1]=r;
+		setpoints[0]=g;
+		setpoints[2]=b;
+		
+		/*
 		//Fade R,G,B.
 	   	setpoints[0]=0; //G
 	   	setpoints[1]=SETPOINT; //R
@@ -241,7 +260,7 @@ int main()
 		setpoints[1]=i;
 		delay(5000);
 		}	    
-		
+		*/
 	    
 	     
 		// TODO: Main loop. Because voltage regulation is all done in interrupt.
