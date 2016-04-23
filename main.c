@@ -86,7 +86,6 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
 
 int i2c_read_byte(int addr) { // FIXME (Hangs in while loop checkint CR2 bit when ADC interrupt is enabed)
-    
     I2C1_CR2 = (BIT13)|(1<<16)|(MPU_ADR); // Write 1 byte to MPU_ADR and sent start
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
@@ -181,8 +180,8 @@ int main()
         I could just use them... But I don't :)
         */
         
-         // TODO: disabled for testing
-        //ISER |= (BIT12); // Enable IRQ12, (That's the adc)
+         // TODO: disable(d) for testing
+        ISER |= (BIT12); // Enable IRQ12, (That's the adc)
         IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
         //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
         
