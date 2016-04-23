@@ -86,47 +86,26 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
 
 int i2c_read_byte(int addr) { // FIXME (Hangs in while loop checkint CR2 bit when ADC interrupt is enabed)
-    int data = 0;
-
-    //I2C1_CR2 &= ~(BIT10); // write (!)
-    //I2C1_CR2 &= ~(0xff << 16); // clear nbytes?
-    //I2C1_CR2 |= BIT13 | (1 << 16) | MPU_ADR; // send start AND set nbytes & set adr.
-    // above 3 lines can get much shortened and no RMW:
+    
     I2C1_CR2 = (BIT13)|(1<<16)|(MPU_ADR); // Write 1 byte to MPU_ADR and sent start
-    
-    
-    //while(I2C1_CR2 & BIT13); // is it realy necessary to wait here untill the START condition is sent? Nope. Let's get rid of this line
-    
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
 
-    //I2C1_CR2 |= BIT10; // read
-    //I2C1_CR2 |= BIT13 | (1 << 16); // Start + Nbytes
-    // above 2 can be shortened too, to 1 atomic operation:
-    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | MPU_ADR | BIT25;
+    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | MPU_ADR | BIT25; // read (BIT10) one byte (1<<16) from MPU_ADR, generate start (BIT13), and generate stop when done (BIT25)
     
-    //while(I2C1_CR2 & BIT13); // wait 'till start is sent (Not needed)
     while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
-    data = I2C1_RXDR;
+    return I2C1_RXDR;
     
-    //I2C1_CR2 |= (BIT14); // manualy generate stop (Could auto-generate it!)
-    //while(I2C1_CR2 & BIT14);
-    // above 2 no longer needed because of stop auto generation (CR2 bit 25)
-    
-    return data;
 }
 
 void i2c_write_byte(int addr, int data) { // FIXME (Hangs in while when ADC interrupt is enabed)
-    I2C1_CR2 &= ~(BIT10);
-    I2C1_CR2 |= (BIT13) |  (2 << 16) | MPU_ADR;
-    while(I2C1_CR2 & BIT13);
+    I2C1_CR2 = (BIT13 | (2<<16) | MPU_ADR | BIT25);
+  
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0));
 
     I2C1_TXDR = data;
     while (!(I2C1_ISR & BIT0));
-    I2C1_CR2 |= (BIT14); // manualy generate stop
-    while(I2C1_CR2 & BIT14);
 }
 
 int main()
