@@ -31,6 +31,9 @@ Next goal: Read MPU-6050 and control the LED's with it. The slave address of the
 #define SETPOINT 372
 
 #define MPU_ADR 0b11010000
+//values for motion detect interrupt, guestimated right.
+#define MOTION_THRESHOLD 20
+#define MOTION_DURATION 40
 
 void delay(int dly)
 {
@@ -196,21 +199,33 @@ int main()
         ADC_CR |= (BIT2); // Set ADSTART to start conversion
 
 	int dummy; // XXX
+	
+	setpoints[0] = 0;
+	setpoints[1] = 0;
+	setpoints[1] = SETPOINT/2;
+	delay(900000); // give the MPU-6050 some time to initialize.
+	setpoints[2] = SETPOINT/2; // to see how much time
+	setpoints[1]=0;
+	i2c_write_byte(107, 0x00); // power on MPU-6050
+	i2c_write_byte(0x68, 0x07); // reset all signal paths
+	dummy=i2c_read_byte(58); //reset interrupts
+	//i2c_write_byte(108, 0b00000111); // powerdown gyro and set accelerometer to lowest sample rate 1.25Hz.
+	i2c_write_byte(0x37, 0b00100000); // active high interupt, push-pull, untill cleared by reading register 58 only.
+	i2c_write_byte(28, 0b0000001); // set DHPF (Bits 3:0) for motion detect
+	i2c_write_byte(0x1F, MOTION_THRESHOLD); // set motion detection thresshold 
+	i2c_write_byte(0x20, MOTION_DURATION); // motion detection duration.
+	i2c_write_byte(0x69, 0b00010101); //Mot detect decrement 
+	
+	i2c_write_byte(0x38, 0x40); //enable motion detection interrupt
+	
 	while(1)
 	{	
 		
-		int x,y,z;
-		//dummy = MPU_Read(117); // 117 should echo own adr.
-		dummy=i2c_read_byte(117);
-		//dummy = MPU_Read(107); // 107 is power management register
-		dummy=i2c_read_byte(107);
-		i2c_write_byte(107, 0x00);
-		dummy = i2c_read_byte(107); // 107 is power management register
-		/*
-		x=MPU_Read(59)<<8&MPU_Read(59);
-		y=MPU_Read(61)<<8&MPU_Read(61);
-		z=MPU_Read(63)<<8&MPU_Read(63);
-		*/
+		int x,y,z, istat, count;
+		
+		istat = i2c_read_byte(58); // TODO: for debug but might be usefull later too (if bit 6 is set: motion interrupt)
+		
+		
 		x=(i2c_read_byte(59)<<8)+i2c_read_byte(60); // TODO: It is read as bytes but was a 16 bit 2-s complement (signed) variable. So put a better conversion here.
 		y=(i2c_read_byte(61)<<8)+i2c_read_byte(62);
 		z=(i2c_read_byte(63)<<8)+i2c_read_byte(64);
@@ -237,6 +252,13 @@ int main()
 		setpoints[1]=r;
 		setpoints[0]=g;
 		setpoints[2]=b;
+		
+		if (istat&(1<<6)){ // to show there was a motion interrupt
+		setpoints[1]=SETPOINT;
+		setpoints[0]=0;
+		setpoints[2]=0;
+		delay(2000000);
+		}
 		
 		//TODO: Think of a nice way to use below zero values / use the acellerometer (and gyro?) in a juggle ball.
 		
