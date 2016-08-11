@@ -14,7 +14,7 @@ WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first
 
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 
-TODO: Cleanup comments/notes etc.
+TODO: Cleanup comments/notes/old code etc.
 Next goal: Read MPU-6050 and control the LED's with it. The slave address of the MPU-60X0 is b110100X, with the X set by AD0. (That's7 bits, nr 8 is R/!W)
 */
 
@@ -31,9 +31,9 @@ Next goal: Read MPU-6050 and control the LED's with it. The slave address of the
 #define SETPOINT 372
 
 #define MPU_ADR 0b11010000
-//values for motion detect interrupt, guestimated right.
-#define MOTION_THRESHOLD 20
-#define MOTION_DURATION 40
+//values for motion detect interrupt, guestimated right (Thr 20, DUR 40).
+#define MOTION_THRESHOLD 10
+#define MOTION_DURATION 20
 
 void delay(int dly)
 {
@@ -87,7 +87,7 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 // spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
 
-int i2c_read_byte(int addr) { // FIXME (Hangs in while loop checkint CR2 bit when ADC interrupt is enabed)
+int i2c_read_byte(int addr) { 
     I2C1_CR2 = (BIT13)|(1<<16)|(MPU_ADR); // Write 1 byte to MPU_ADR and sent start
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
@@ -99,7 +99,7 @@ int i2c_read_byte(int addr) { // FIXME (Hangs in while loop checkint CR2 bit whe
     
 }
 
-void i2c_write_byte(int addr, int data) { // FIXME (Hangs in while when ADC interrupt is enabed)
+void i2c_write_byte(int addr, int data) { 
     I2C1_CR2 = (BIT13 | (2<<16) | MPU_ADR | BIT25);
   
     I2C1_TXDR = addr;
@@ -109,7 +109,51 @@ void i2c_write_byte(int addr, int data) { // FIXME (Hangs in while when ADC inte
     while (!(I2C1_ISR & BIT0));
 }
 
-int main()
+void Goto_Sleep(){
+// set MPU6050 to low power (Cycle at 1.25Hz between sleep and accelerometer, power down all gyro axes, run on internal 8Mhz clock, generate motion interrupt to wake MCU, then set MCU to sleep.
+
+//for now just sets MPU6050 to low power.
+	i2c_write_byte(107, 0x28); //cycle, disable temperature sensor
+	//i2c_write_byte(108, 0b00000111); // powerdown gyro and set accelerometer to lowest sample rate 1.25Hz.
+	//i2c_write_byte(108, 0b11000111); // highest sample rate sleep (To test if motion interupt works THEN as it does not at 1.25Hz even with DHPF 0.63) 
+	// TODO: It does, figure out what the lowest sample rate is that works
+	//i2c_write_byte(108, 0b10000111); // works
+	i2c_write_byte(108, 0b01000111); // works but less sensitive for motion then before. (Filter action / sample rate interaction noticable)
+	
+	// current usage: 40 Hz: 240 uA
+	//		   5 HZ: 80 uA
+
+// and sets up mpu to generate motion interrupt
+	i2c_read_byte(58); //reset currently pending interrupts
+	i2c_write_byte(0x37, 0b00100000); // active high INT pin, push-pull, untill cleared by reading register 58 only.
+	i2c_write_byte(28, 0b0000100); // set DHPF (Bits 3:0) for motion detect (0.63Hz)
+	i2c_write_byte(0x1F, MOTION_THRESHOLD); // set motion detection thresshold 
+	i2c_write_byte(0x20, MOTION_DURATION); // motion detection duration.
+	i2c_write_byte(0x69, 0b00010101); //Mot detect decrement 
+
+	i2c_write_byte(0x38, 0x40); //enable motion detection interrupt
+	
+	i2c_read_byte(58); //reset currently pending interrupts
+
+// Set MCU to sleep (TODO: set MCU to sleep)	
+	setpoints[0] = 0;
+	setpoints[1] = 0;
+	setpoints[2] = 0;
+
+	//TIM3_CCER &= !(BIT0 | BIT4) ; // disable TIM3 PWM outputs
+	//TIM14_CCER &=! (BIT0) ; // disable TIM14 PWM output
+	//ADC_IER &=!(BIT2|BIT3);// disable ADC interrupt
+	
+	
+	//while( !(i2c_read_byte(58) & (1<<6) )); // as long as there is no motion interrupt, wait here.
+	// NOTE: XXX When measuring current consumption from MPU6050 take into account I2C communication also takes current!!)
+	
+	//while(1); //TODO: set MCU to sleep
+
+}
+
+
+int main() // TODO: Lots of cleanup!
 {
 	initClock();
 	
@@ -202,21 +246,14 @@ int main()
 	
 	setpoints[0] = 0;
 	setpoints[1] = 0;
-	setpoints[1] = SETPOINT/2;
+	setpoints[2] = SETPOINT/2;
 	delay(900000); // give the MPU-6050 some time to initialize.
-	setpoints[2] = SETPOINT/2; // to see how much time
-	setpoints[1]=0;
+	setpoints[1] = SETPOINT/2; // to see how much time
+	setpoints[2]=0;
 	i2c_write_byte(107, 0x00); // power on MPU-6050
-	i2c_write_byte(0x68, 0x07); // reset all signal paths
-	dummy=i2c_read_byte(58); //reset interrupts
-	//i2c_write_byte(108, 0b00000111); // powerdown gyro and set accelerometer to lowest sample rate 1.25Hz.
-	i2c_write_byte(0x37, 0b00100000); // active high interupt, push-pull, untill cleared by reading register 58 only.
-	i2c_write_byte(28, 0b0000001); // set DHPF (Bits 3:0) for motion detect
-	i2c_write_byte(0x1F, MOTION_THRESHOLD); // set motion detection thresshold 
-	i2c_write_byte(0x20, MOTION_DURATION); // motion detection duration.
-	i2c_write_byte(0x69, 0b00010101); //Mot detect decrement 
 	
-	i2c_write_byte(0x38, 0x40); //enable motion detection interrupt
+	Goto_Sleep(); // set MPU-6050 to low power and to generate interrupt on motion. TODO: goto_sleep() will later do more, change comment to reflect that.
+	// TODO: After wake up, re-setup accelerometer for faster sampling. 
 	
 	while(1)
 	{	
