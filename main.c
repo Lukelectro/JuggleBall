@@ -15,7 +15,7 @@ WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first
 For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
 
 TODO: Cleanup comments/notes/old code etc.
-Next goal: Read MPU-6050 and control the LED's with it. The slave address of the MPU-60X0 is b110100X, with the X set by AD0. (That's7 bits, nr 8 is R/!W)
+Next goal: read adxl345 because that's probably more battery-friendly compared to mpu6050
 */
 
 #include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
