@@ -30,11 +30,7 @@ Next goal: read adxl345 because that's probably more battery-friendly compared t
 #define SETPOINT3 372 
 #define SETPOINT 372
 
-#define MPU_ADR 0b11010000
-//values for motion detect interrupt, guestimated right (Thr 20, DUR 40).
-#define MOTION_THRESHOLD 10
-#define MOTION_DURATION 20
-
+#define I2C_ADR 0xA6 // alternate adres/sdo low (0x53+rw dus 0xA6/7)
 void delay(int dly)
 {
   while( dly--);
@@ -88,19 +84,33 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
 
 int i2c_read_byte(int addr) { 
-    I2C1_CR2 = (BIT13)|(1<<16)|(MPU_ADR); // Write 1 byte to MPU_ADR and sent start
+    I2C1_CR2 = (BIT13)|(1<<16)|(I2C_ADR); // Write 1 byte to I2C_ADR and sent start
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
 
-    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | MPU_ADR | BIT25; // read (BIT10) one byte (1<<16) from MPU_ADR, generate start (BIT13), and generate stop when done (BIT25)
+    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | I2C_ADR | BIT25; // read (BIT10) one byte (1<<16) from I2C_ADR, generate start (BIT13), and generate stop when done (BIT25)
     
     while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
     return I2C1_RXDR;
     
 }
 
+void i2c_read_n_bytes(int addr, int n, int* buff) { 
+    I2C1_CR2 = (BIT13)|(1<<16)|(I2C_ADR); // Write 1 byte to I2C_ADR and sent start
+    I2C1_TXDR = addr;
+    while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
+
+    I2C1_CR2 = BIT10 | BIT13 | ((n&0xFF)<<16) | I2C_ADR | BIT25; // read (BIT10) n byte (<<16) from I2C_ADR, generate start (BIT13), and generate stop when done (BIT25)
+    
+    do{
+    while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
+    n--;
+    buff[n]=I2C1_RXDR;
+    }while(n>0);
+}
+
 void i2c_write_byte(int addr, int data) { 
-    I2C1_CR2 = (BIT13 | (2<<16) | MPU_ADR | BIT25);
+    I2C1_CR2 = (BIT13 | (2<<16) | I2C_ADR | BIT25);
   
     I2C1_TXDR = addr;
     while (!(I2C1_ISR & BIT0));
@@ -108,7 +118,7 @@ void i2c_write_byte(int addr, int data) {
     I2C1_TXDR = data;
     while (!(I2C1_ISR & BIT0));
 }
-
+/*
 void Goto_Sleep(){
 // set MPU6050 to low power (Cycle at 1.25Hz between sleep and accelerometer, power down all gyro axes, run on internal 8Mhz clock, generate motion interrupt to wake MCU, then set MCU to sleep.
 
@@ -152,6 +162,7 @@ void Goto_Sleep(){
 
 }
 
+*/
 
 int main() // TODO: Lots of cleanup!
 {
@@ -250,22 +261,24 @@ int main() // TODO: Lots of cleanup!
 	delay(900000); // give the MPU-6050 some time to initialize.
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
-	i2c_write_byte(107, 0x00); // power on MPU-6050
+	i2c_write_byte(0x1D, 0x08); // power up ADXL345
 	
-	Goto_Sleep(); // set MPU-6050 to low power and to generate interrupt on motion. TODO: goto_sleep() will later do more, change comment to reflect that.
-	// TODO: After wake up, re-setup accelerometer for faster sampling. 
+	dummy= i2c_read_byte(0x00); // read devID for debug
 	
+	dummy= i2c_read_byte(0x1D); // read power ctrl for debug
+		
 	while(1)
 	{	
 		
-		int x,y,z, istat, count;
+		int x,y,z, buffer[57];
 		
-		istat = i2c_read_byte(58); // TODO: for debug but might be usefull later too (if bit 6 is set: motion interrupt)
+		//i2c_read_n_bytes(0x00, 57, buffer); // TODO: Test/debug this. 	
 		
+		x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: It is read as bytes but was a 16 bit 2-s complement (signed) variable. So put a better conversion here.
+		y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8);
+		z=i2c_read_byte(0x36)+(i2c_read_byte(0x37)<<8);
 		
-		x=(i2c_read_byte(59)<<8)+i2c_read_byte(60); // TODO: It is read as bytes but was a 16 bit 2-s complement (signed) variable. So put a better conversion here.
-		y=(i2c_read_byte(61)<<8)+i2c_read_byte(62);
-		z=(i2c_read_byte(63)<<8)+i2c_read_byte(64);
+	
 		
 		// because it is 2's complement, if bit 15 is set then bits 31 to 15 should also be set (To convert from 16 bit signed int to 32 bit signed int)
 		if(x&1<<15) x|=0xFFFF0000;
@@ -290,12 +303,6 @@ int main() // TODO: Lots of cleanup!
 		setpoints[0]=g;
 		setpoints[2]=b;
 		
-		if (istat&(1<<6)){ // to show there was a motion interrupt
-		setpoints[1]=SETPOINT;
-		setpoints[0]=0;
-		setpoints[2]=0;
-		delay(2000000);
-		}
 		
 		//TODO: Think of a nice way to use below zero values / use the acellerometer (and gyro?) in a juggle ball.
 		
