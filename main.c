@@ -258,31 +258,31 @@ int main() // TODO: Lots of cleanup!
 	setpoints[0] = 0;
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
-	delay(900000); // give the MPU-6050 some time to initialize.
+	delay(900000); // give the adxl time to initialize
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
-	i2c_write_byte(0x1D, 0x08); // power up ADXL345
-	i2c_write_byte(0x38, 0x80); // enable fifo (For some reason it only returns 0's so lets try FiFo)
+	//i2c_write_byte(0x2D, 0x00); // power up ADXL345
+	//i2c_write_byte(0x2D, 0x10); // power up ADXL345 BUG FOUND! It is 0x2d, not 0x1D, that is thresshold_tap. And why the arduinolibs write 0x00 and 0x10 first, I don't know.
+	i2c_write_byte(0x2D, 0x08); // power up ADXL345
+	delay(100000); // give the adxl time to initialize
 	
-	dummy= i2c_read_byte(0x00); // read devID for debug
-	dummy= i2c_read_byte(0x30); // read Int_Source for debug
+
+	//dummy= i2c_read_byte(0x00); // read devID for debug
 	
 		
 	while(1)
 	{	
 		
-		int x,y,z, fifostat, buffer[57];
+		int x,y,z, fifostat, buffer[6];
 		
-		//i2c_read_n_bytes(0x00, 57, buffer); // TODO: Test/debug this. 	
+	//	i2c_read_n_bytes(0x32, 6, buffer); // TODO: Test/debug this. 	
 		
-		//Only read data when data available
-		fifostat=i2c_read_byte(0x39);
-		if(fifostat&0x3F){ // if there is at least one entry in fifo
-			x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between
-			y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8); 
-			z=i2c_read_byte(0x36)+(i2c_read_byte(0x37)<<8);
-		}
-	
+		
+		x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between, and only when new data available
+		y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8); 
+		z=i2c_read_byte(0x36)|(i2c_read_byte(0x37)<<8);
+		
+		delay(100000); // give the adxl time
 		
 		// because it is 2's complement, if bit 15 is set then bits 31 to 15 should also be set (To convert from 16 bit signed int to 32 bit signed int)
 		if(x&1<<15) x|=0xFFFF0000; // TODO: test
@@ -291,7 +291,7 @@ int main() // TODO: Lots of cleanup!
 		
 		//scale XYZ to SETPOINT as max
 		float g,r,b;
-		g=x*SETPOINT/(1<<15);
+		g=x*SETPOINT/(1<<15); // TODO: That was for 16 bit mcu6050, adxl is 10 bit.
 		r=y*SETPOINT/(1<<15);
 		b=z*SETPOINT/(1<<15);
 		
@@ -310,37 +310,6 @@ int main() // TODO: Lots of cleanup!
 		
 		//TODO: Think of a nice way to use below zero values / use the acellerometer (and gyro?) in a juggle ball.
 		
-		/*
-		//Fade R,G,B.
-	   	setpoints[0]=0; //G
-	   	setpoints[1]=SETPOINT; //R
-	   	setpoints[2]=0; //B
-	   	
-	
-		for(int i=0;i<=SETPOINT;i++){
-		setpoints[1]=SETPOINT-i;
-		setpoints[2]=i;
-		delay(5000);
-		}	    
-	    
-	
-		for(int i=0;i<=SETPOINT;i++){
-		setpoints[2]=SETPOINT-i;
-		setpoints[0]=i;
-		delay(5000);
-		}	    
-	
-		
-	
-		for(int i=0;i<=SETPOINT;i++){
-		setpoints[0]=SETPOINT-i;
-		setpoints[1]=i;
-		delay(5000);
-		}	    
-		*/
-	    
-	     
-		// TODO: Main loop. Because voltage regulation is all done in interrupt.
 	} 
 	return 0;
 }
