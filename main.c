@@ -262,26 +262,30 @@ int main() // TODO: Lots of cleanup!
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
 	i2c_write_byte(0x1D, 0x08); // power up ADXL345
+	i2c_write_byte(0x38, 0x80); // enable fifo (For some reason it only returns 0's so lets try FiFo)
 	
 	dummy= i2c_read_byte(0x00); // read devID for debug
+	dummy= i2c_read_byte(0x30); // read Int_Source for debug
 	
-	dummy= i2c_read_byte(0x1D); // read power ctrl for debug
 		
 	while(1)
 	{	
 		
-		int x,y,z, buffer[57];
+		int x,y,z, fifostat, buffer[57];
 		
 		//i2c_read_n_bytes(0x00, 57, buffer); // TODO: Test/debug this. 	
 		
-		x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: It is read as bytes but was a 16 bit 2-s complement (signed) variable. So put a better conversion here.
-		y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8);
-		z=i2c_read_byte(0x36)+(i2c_read_byte(0x37)<<8);
-		
+		//Only read data when data available
+		fifostat=i2c_read_byte(0x39);
+		if(fifostat&0x3F){ // if there is at least one entry in fifo
+			x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between
+			y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8); 
+			z=i2c_read_byte(0x36)+(i2c_read_byte(0x37)<<8);
+		}
 	
 		
 		// because it is 2's complement, if bit 15 is set then bits 31 to 15 should also be set (To convert from 16 bit signed int to 32 bit signed int)
-		if(x&1<<15) x|=0xFFFF0000;
+		if(x&1<<15) x|=0xFFFF0000; // TODO: test
 		if(y&1<<15) y|=0xFFFF0000;
 		if(z&1<<15) z|=0xFFFF0000;
 		
