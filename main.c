@@ -1,5 +1,12 @@
 /*
 NOTES, IDEAS, CURRENT STATE, TITLE, LICENSE, ETC. SHOULD GO HERE.
+
+Use tap, freefal, activity and inactivity interrupts from ADXL345.
+Inactivity: Fade trough rainbow colours a few times (say, 10s) then go to sleep.
+Activity: Wake up / Folow "juggle" protocol
+Tap: Part of juggle protocol: Change colour (Jump through a set of predefined pretty coulours)
+Freefall: change colour.
+That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 */
 
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
@@ -82,11 +89,11 @@ void i2c_read_n_bytes(int addr, int n, int* buff) {
 
     I2C1_CR2 = BIT10 | BIT13 | ((n&0xFF)<<16) | I2C_ADR | BIT25; // read (BIT10) n byte (<<16) from I2C_ADR, generate start (BIT13), and generate stop when done (BIT25)
     
-    do{
-    while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
-    n--;
-    buff[n]=I2C1_RXDR;
-    }while(n>0);
+    
+    for(int i=0;i<n;i++){
+    	while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
+    	buff[i]=I2C1_RXDR;
+    }
 }
 
 void i2c_write_byte(int addr, int data) { 
@@ -237,13 +244,13 @@ int main() // TODO: Lots of cleanup!
 	{	
 		
 		int x,y,z, fifostat, buffer[6];
+	
+		i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go	
+		x=buffer[0]|(buffer[1]<<8); 
+		y=buffer[2]|(buffer[3]<<8); 
+		z=buffer[4]|(buffer[5]<<8); 
+	
 		
-	//	i2c_read_n_bytes(0x32, 6, buffer); // TODO: Test/debug this. 	
-		
-		
-		x=i2c_read_byte(0x32)|(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between, and only when new data available
-		y=i2c_read_byte(0x34)|(i2c_read_byte(0x35)<<8); 
-		z=i2c_read_byte(0x36)|(i2c_read_byte(0x37)<<8);
 		
 		delay(100000); // give the adxl time
 		
