@@ -1,25 +1,8 @@
 /*
-NOTE/IDEA:
-Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
-Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!) That's for one ch. For 3ch the interrupt will trigger at the same rate but per channel samplerate will be lower. (Maybe sample slower to make sure ISR can keep up, and then check what effect that has on voltage/current regulation)
-
-not to self: Once I start sampling at multiple chs, check samplerate for each ch.
-
-Goal: 3ch PWM LED switchmode current source.
-WORKS:  Subgoal 1: TIM3_CH2 PWM output (Pin13, PA7) , same freq, diff. D
-WORKS:  Subgoal 2: TIM14_CH1 PWM output (Pin10, PA4), same freq, diff. D
-WORKS:  subgoal 3: Multichannel ADC measurements. 
-WORKS:  subgoal 4: Choose reference "voltage" (ADC value) / sense resistor values wiseley (for 0-30mA):
-WORKS:  Subgaol 5: Close the feedback loops. And maybe test with resistors first so the led's stay intact.
-
-For the smps use tim3_psc=0 (48Mhz/1) and TIM3_ARR=2048, so 23.4Khz. Note that the compare CCR should be below or equal to ARR (To be usefull)
-
-TODO: Cleanup comments/notes/old code etc.
-Next goal: read adxl345 because that's probably more battery-friendly compared to mpu6050
+NOTES, IDEAS, CURRENT STATE, TITLE, LICENSE, ETC. SHOULD GO HERE.
 */
 
-#include "stm32f030xx.h" // the Frank Duignan header file. (I started from his "Blinky" example). 
-// I realy should use ST provided files, so I'm not dependant on some guys' blog. (Includes, linkerscripts, makefile, init. Though I could (learn to) write my own...)
+#include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
 
 //MAX setpoints 
 //(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
@@ -30,7 +13,7 @@ Next goal: read adxl345 because that's probably more battery-friendly compared t
 #define SETPOINT3 372 
 #define SETPOINT 372
 
-#define I2C_ADR 0xA6 // alternate adres/sdo low (0x53+rw dus 0xA6/7)
+#define I2C_ADR 0xA6 // adxl 345 alternate adres/sdo low (0x53+rw dus 0xA6/7)
 void delay(int dly)
 {
   while( dly--);
@@ -56,7 +39,7 @@ void initClock()
         RCC_CFGR |= (BIT21 | BIT19 ); 
 
         // Need to limit ADC clock to below 14MHz so will change ADC prescaler to 4
-        RCC_CFGR |= BIT14;
+      ADC_CFGR2|=(BIT31); // Clock ADC with PCLOCK/4 =48Mhz/4=12Mhz =OK :)
 
 
         // and turn the PLL back on again
@@ -69,9 +52,6 @@ void initClock()
         RCC_APB1ENR |= (BIT1 | BIT8 | BIT21);
         
         RCC_APB2ENR |= BIT9; // enable clock to adc
-        RCC_CR |= BIT0; // turn on HSI clock (For ADC) // TODO: I could use the prescaled main clock...
-        while(!(RCC_CR & BIT1)); // wait till HSI is stable
-        
 }
 
 
@@ -172,10 +152,7 @@ int main() // TODO: Lots of cleanup!
 	RCC_AHBENR |= BIT17;
 	
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
-	//GPIOA_PUPDR |= (BIT18|BIT20) ; // Pull ups voor I2C. (Already present on MPU6050 module) XXX
-	GPIOA_OTYPER |= (BIT9 |BIT10); // Maybe not needed but switch to Open Drain on I2C pins (But those are connected to the I2V module and not to GPIO so this should have no effect)
-	
-	
+		
 	//Set up I2C:
 	GPIOA_OSPEEDR |= 0x0FC00000; // High speed IO for I2C (?)
 	I2C1_TIMINGR = 0x50330309; //0x50330309; //calculated from tables in datasheet.
@@ -241,13 +218,6 @@ int main() // TODO: Lots of cleanup!
         IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
         //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
         
-        // TODO: disabled for testing
-	//I2C interrupt, first enable in NVIC then in I2C1 registers
-        //ISER |= (BIT23); // Bit23 is I2C1
-        IPR5 |= (100<<24) ; // IPR(4n+3) dus IPR5, Bit 31:24 XXX
-	I2C1_CR1 |= (BIT7|BIT6|BIT5|BIT4|BIT3|BIT2|BIT1); // enable all interrupts XXX
-        
-        
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
         ADC_CR |= (BIT2); // Set ADSTART to start conversion
@@ -257,7 +227,6 @@ int main() // TODO: Lots of cleanup!
 	setpoints[0] = 0;
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
-	delay(200000); //XXX? give the adxl time to initialize
 	i2c_write_byte(0x2D, 0x08); // power up ADXL345
 	delay(100000);
 	setpoints[1] = SETPOINT/2; // to see how much time
@@ -289,7 +258,6 @@ int main() // TODO: Lots of cleanup!
 		r=y*SETPOINT/(1<<8);
 		b=z*SETPOINT/(1<<8);
 		
-		// TODO: add half setpoint because xyz is signed but led's can't get darker then off?
 		// TODO: Think of a nice way to use below zero values / use the acellerometer in a juggle ball.
 		// Tap and freefall interrupts of adxl345 could be nice. And inactivity/activity for sleep/wake uC
 		
@@ -305,7 +273,6 @@ int main() // TODO: Lots of cleanup!
 		setpoints[0]=g;
 		setpoints[2]=b;
 		
-
 		
 	} 
 	return 0;
@@ -318,8 +285,6 @@ void ADC_Handler(){
         
         static int ch=0; // keep between invocations
         static int pwm[3];
-        //static int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3}; // TODO: later to be set from main.
-        //static int OVFs = 0, resyncs=0; // for debug purposes.
         
         if(ADC_ISR&(BIT2)) // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
                 {
@@ -334,18 +299,10 @@ void ADC_Handler(){
                 TIM3_CCR1 = pwm[2];
                 TIM3_CCR2 = pwm[1];
               	TIM14_CCR1 = pwm[0];
-                //if(ch<2) ch++; else ch=0; // could do this entirely with OESEQ and just ch++ here... Is slightly faster
                 ch++;
                 }
-        /*        
-        if(ADC_ISR&(BIT4)){ // OVF monitoring (flag is set even if OVF interrupt is not enabled)
-        	OVFs++; 
-        	ADC_ISR&=BIT4; // reset flag	
-        }
-        */
         
-        if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync.
-		//if(ch!=0) resyncs++; 
+        if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync. 
         	ch=0; 
         	ADC_ISR&=(BIT3); // reset flag
         }
@@ -354,51 +311,4 @@ void ADC_Handler(){
 	
 }
 
-
-void I2C_Handler(){
-
-// TODO: handlers for each flagbit.
-
-//spiekbriefje: I2C1_ISR: BIT10 = OVeRrun (underrun), BIT9 = ARbitrationLOst, 8= BusERR, BIT7= Transfer Complete Reload, BIT6 = TransferComplete, bit5 =STOPF
-// bit4= NACKF, bit2=RXNE (RX Not Empty), bit1=TXIS (TX buffer empty, write needed!), BIT0=TXE (TX empty)
-
-if(I2C1_ISR&BIT10){ // OVR
-
-}
-if(I2C1_ISR&BIT9){ // ARLO
-
-}
-if(I2C1_ISR&BIT8){ // BERR
-
-}
-if(I2C1_ISR&BIT7){ //TCR
-
-}
-if(I2C1_ISR&BIT6){ // TC
-
-}
-if(I2C1_ISR&BIT5){ // STOPF
-
-}
-if(I2C1_ISR&BIT4){ // NACKF
-
-}
-if(I2C1_ISR&BIT2){ //RXNE
-
-}
-
-if(I2C1_ISR&BIT1){ //TXIS
-
-}
-
-if(I2C1_ISR&BIT0){ //TXE
-
-}
-
-
-int dummy = I2C1_ISR;
-
-//I2C1_ICR |= (BIT10)|(BIT9)|(BIT8)|BIT5|BIT4; // clear all flags
-
-}
 
