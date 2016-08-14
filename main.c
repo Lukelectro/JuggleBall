@@ -1,6 +1,6 @@
 /*
 NOTE/IDEA:
-Clock ADC with dedictated 14Mhz clock. Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
+Set ADC sample rate by selecting sample time, if 71.5clks then adc samplerate should be 1/(71.5*(1/14E6)+12.5*(1/14E6)=166.67Khz
 Check this by having ADC EOC interupt toggling a pin. (Yep! 167Khz!) That's for one ch. For 3ch the interrupt will trigger at the same rate but per channel samplerate will be lower. (Maybe sample slower to make sure ISR can keep up, and then check what effect that has on voltage/current regulation)
 
 not to self: Once I start sampling at multiple chs, check samplerate for each ch.
@@ -81,7 +81,7 @@ int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
 
 
 // spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
-// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050)
+// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050/adxl345)
 
 int i2c_read_byte(int addr) { 
     I2C1_CR2 = (BIT13)|(1<<16)|(I2C_ADR); // Write 1 byte to I2C_ADR and sent start
@@ -172,7 +172,7 @@ int main() // TODO: Lots of cleanup!
 	RCC_AHBENR |= BIT17;
 	
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
-	GPIOA_PUPDR |= (BIT18|BIT20) ; // Pull ups voor I2C. (Already present on MPU6050 module)
+	//GPIOA_PUPDR |= (BIT18|BIT20) ; // Pull ups voor I2C. (Already present on MPU6050 module) XXX
 	GPIOA_OTYPER |= (BIT9 |BIT10); // Maybe not needed but switch to Open Drain on I2C pins (But those are connected to the I2V module and not to GPIO so this should have no effect)
 	
 	
@@ -237,7 +237,6 @@ int main() // TODO: Lots of cleanup!
         I could just use them... But I don't :)
         */
         
-         // TODO: disable(d) for testing
         ISER |= (BIT12); // Enable IRQ12, (That's the adc)
         IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
         //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
@@ -245,8 +244,8 @@ int main() // TODO: Lots of cleanup!
         // TODO: disabled for testing
 	//I2C interrupt, first enable in NVIC then in I2C1 registers
         //ISER |= (BIT23); // Bit23 is I2C1
-        IPR5 |= (100<<24) ; // IPR(4n+3) dus IPR5, Bit 31:24
-	I2C1_CR1 |= (BIT7|BIT6|BIT5|BIT4|BIT3|BIT2|BIT1); // enable all interrupts
+        IPR5 |= (100<<24) ; // IPR(4n+3) dus IPR5, Bit 31:24 XXX
+	I2C1_CR1 |= (BIT7|BIT6|BIT5|BIT4|BIT3|BIT2|BIT1); // enable all interrupts XXX
         
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
@@ -258,17 +257,12 @@ int main() // TODO: Lots of cleanup!
 	setpoints[0] = 0;
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
-	delay(900000); // give the adxl time to initialize
+	delay(200000); //XXX? give the adxl time to initialize
+	i2c_write_byte(0x2D, 0x08); // power up ADXL345
+	delay(100000);
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
-	//i2c_write_byte(0x2D, 0x00); // power up ADXL345
-	//i2c_write_byte(0x2D, 0x10); // power up ADXL345 BUG FOUND! It is 0x2d, not 0x1D, that is thresshold_tap. And why the arduinolibs write 0x00 and 0x10 first, I don't know.
-	i2c_write_byte(0x2D, 0x08); // power up ADXL345
-	delay(100000); // give the adxl time to initialize
-	
 
-	//dummy= i2c_read_byte(0x00); // read devID for debug
-	
 		
 	while(1)
 	{	
@@ -278,22 +272,26 @@ int main() // TODO: Lots of cleanup!
 	//	i2c_read_n_bytes(0x32, 6, buffer); // TODO: Test/debug this. 	
 		
 		
-		x=i2c_read_byte(0x32)+(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between, and only when new data available
-		y=i2c_read_byte(0x34)+(i2c_read_byte(0x35)<<8); 
+		x=i2c_read_byte(0x32)|(i2c_read_byte(0x33)<<8); // TODO: should read all data in 1 go without stop condition in between, and only when new data available
+		y=i2c_read_byte(0x34)|(i2c_read_byte(0x35)<<8); 
 		z=i2c_read_byte(0x36)|(i2c_read_byte(0x37)<<8);
 		
 		delay(100000); // give the adxl time
 		
-		// because it is 2's complement, if bit 15 is set then bits 31 to 15 should also be set (To convert from 16 bit signed int to 32 bit signed int)
-		if(x&1<<15) x|=0xFFFF0000; // TODO: test
-		if(y&1<<15) y|=0xFFFF0000;
-		if(z&1<<15) z|=0xFFFF0000;
+		// because it is 2's complement, if bit 9 is set then bits 31 to 9 should also be set (To convert from 10 bit signed int to 32 bit signed int)
+		if(x&1<<9) x|=0xFFFFFC00; 
+		if(y&1<<9) y|=0xFFFFFC00;
+		if(z&1<<9) z|=0xFFFFFC00;
 		
 		//scale XYZ to SETPOINT as max
 		float g,r,b;
-		g=x*SETPOINT/(1<<15); // TODO: That was for 16 bit mcu6050, adxl is 10 bit.
-		r=y*SETPOINT/(1<<15);
-		b=z*SETPOINT/(1<<15);
+		g=x*SETPOINT/(1<<8); // adxl is 10 bit, signed.
+		r=y*SETPOINT/(1<<8);
+		b=z*SETPOINT/(1<<8);
+		
+		// TODO: add half setpoint because xyz is signed but led's can't get darker then off?
+		// TODO: Think of a nice way to use below zero values / use the acellerometer in a juggle ball.
+		// Tap and freefall interrupts of adxl345 could be nice. And inactivity/activity for sleep/wake uC
 		
 		if(g>SETPOINT) g=SETPOINT; // crowbar (force safe value)
 		if(r>SETPOINT) r=SETPOINT; // crowbar (force safe value)
@@ -307,8 +305,7 @@ int main() // TODO: Lots of cleanup!
 		setpoints[0]=g;
 		setpoints[2]=b;
 		
-		
-		//TODO: Think of a nice way to use below zero values / use the acellerometer (and gyro?) in a juggle ball.
+
 		
 	} 
 	return 0;
