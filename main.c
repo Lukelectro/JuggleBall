@@ -122,10 +122,13 @@ void goto_sleep(){
 	 TIM3_CCR1 = 0; // set timer outputs 0
          TIM3_CCR2 = 0;
          TIM14_CCR1 = 0;
-         // then stop timer?
+         GPIOA_BSRR = (BIT0); // SET PA0
+         // then stop timer? No, deepsleep should stop all clocks, does the same.
+	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
+	// Todo: Why does it still draw 55mA and isn't that a bit much even for a RUNNING cpu let alone a sleeping one?
+	
 	
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
-	// TODO: test
 	GPIOA_PUPDR|=(BIT11); // enable pulldown op PA5.
         ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
         IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
@@ -134,28 +137,30 @@ void goto_sleep(){
 	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
 	EXTI_RTSR |= (BIT5); // For rising ende
 	
-	// TODO: set MCU to sleep (STOP mode)
+	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
-	PWR_CR = 0x00000001; //clear pdds and set LPDS in pwr_cr
-	__asm("wfi");// Wait For Interrupt (WFI)
+	PWR_CR = 0x00000001; //clear pdds and set LPDS in pwr_cr (Low power regulator)
+	__asm("wfi");// Wait For Interrupt (WFI) / go to sleep
 	
-	initClock(); // TODO: NB: after wakeup it runs from HSI, so initClock() again. 
+	initClock(); // NB: after wakeup it runs from HSI, so initClock() again. 
 	// TODO: Set output pins to what they should be when not low power
-	// TODO: Re-enable interrupts 
+	
+	// Re-enable (other) interrupts 
 	ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
-	// (In fact, reseting the entire thing might be simplest)
 }	
 
 
 int main() // TODO: Lots of cleanup!
 {
 	initClock();
-	
+
 	// Power up PORTA
 	RCC_AHBENR |= BIT17;
 	
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
+	
+	// TODO: Set all pins to a defined state so floating inputs do not consume power
 		
 	//Set up I2C:
 	GPIOA_OSPEEDR |= 0x0FC00000; // High speed IO for I2C (?)
@@ -231,12 +236,13 @@ int main() // TODO: Lots of cleanup!
 	setpoints[0] = 0;
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
+	goto_sleep(); // XXX Debug	
+	
 	i2c_write_byte(0x2D, 0x08); // power up ADXL345
 	delay(900000);
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
 
-	goto_sleep(); // XXX Debug	
 		
 	while(1)
 	{	
