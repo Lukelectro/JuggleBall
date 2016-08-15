@@ -434,3 +434,8 @@
 #define I2C1_RXDR	REGISTER_32(I2C1_BASE + 0x24)
 #define I2C1_TXDR	REGISTER_32(I2C1_BASE + 0x28)
 
+//PWR half added by luke (Base adres was already defined but the rest was not?!?)
+#define PWR_CR		REGISTER_32(PWR_BASE + 0x00)
+#define PWR_CSR		REGISTER_32(PWR_BASE + 0x04)
+
+

@@ -7,6 +7,10 @@ Activity: Wake up / Folow "juggle" protocol
 Tap: Part of juggle protocol: Change colour (Jump through a set of predefined pretty coulours)
 Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
+
+Just done: First try at implementing sleep mode. Entire circuit still draws 55mA when asleep so something is wrong. 
+posibly I/O settings or clock settings. But it does go to sleep and wake up, it just is way to power hungry.
+
 */
 
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
@@ -105,51 +109,44 @@ void i2c_write_byte(int addr, int data) {
     I2C1_TXDR = data;
     while (!(I2C1_ISR & BIT0));
 }
-/*
-void Goto_Sleep(){
-// set MPU6050 to low power (Cycle at 1.25Hz between sleep and accelerometer, power down all gyro axes, run on internal 8Mhz clock, generate motion interrupt to wake MCU, then set MCU to sleep.
 
-//for now just sets MPU6050 to low power.
-	i2c_write_byte(107, 0x28); //cycle, disable temperature sensor
-	//i2c_write_byte(108, 0b00000111); // powerdown gyro and set accelerometer to lowest sample rate 1.25Hz.
-	//i2c_write_byte(108, 0b11000111); // highest sample rate sleep (To test if motion interupt works THEN as it does not at 1.25Hz even with DHPF 0.63) 
-	// TODO: It does, figure out what the lowest sample rate is that works
-	//i2c_write_byte(108, 0b10000111); // works
-	i2c_write_byte(108, 0b01000111); // works but less sensitive for motion then before. (Filter action / sample rate interaction noticable)
+void goto_sleep(){
+
+	// TODO: Set adxl to generate wakeup on activity
 	
-	// current usage: 40 Hz: 240 uA
-	//		   5 HZ: 80 uA
-
-// and sets up mpu to generate motion interrupt
-	i2c_read_byte(58); //reset currently pending interrupts
-	i2c_write_byte(0x37, 0b00100000); // active high INT pin, push-pull, untill cleared by reading register 58 only.
-	i2c_write_byte(28, 0b0000100); // set DHPF (Bits 3:0) for motion detect (0.63Hz)
-	i2c_write_byte(0x1F, MOTION_THRESHOLD); // set motion detection thresshold 
-	i2c_write_byte(0x20, MOTION_DURATION); // motion detection duration.
-	i2c_write_byte(0x69, 0b00010101); //Mot detect decrement 
-
-	i2c_write_byte(0x38, 0x40); //enable motion detection interrupt
+	// TODO: Disable interrupts and clear all pending interupts
+	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
+        
+        
+	// (TODO): Set output pins to whatever makes them Low Power
+	 TIM3_CCR1 = 0; // set timer outputs 0
+         TIM3_CCR2 = 0;
+         TIM14_CCR1 = 0;
+         // then stop timer?
 	
-	i2c_read_byte(58); //reset currently pending interrupts
-
-// Set MCU to sleep (TODO: set MCU to sleep)	
-	setpoints[0] = 0;
-	setpoints[1] = 0;
-	setpoints[2] = 0;
-
-	//TIM3_CCER &= !(BIT0 | BIT4) ; // disable TIM3 PWM outputs
-	//TIM14_CCER &=! (BIT0) ; // disable TIM14 PWM output
-	//ADC_IER &=!(BIT2|BIT3);// disable ADC interrupt
+	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
+	// TODO: test
+	GPIOA_PUPDR|=(BIT11); // enable pulldown op PA5.
+        ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
+        IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
+        //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+	// Enable exti interupt on PA5:
+	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
+	EXTI_RTSR |= (BIT5); // For rising ende
 	
+	// TODO: set MCU to sleep (STOP mode)
+	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
+	PWR_CR = 0x00000001; //clear pdds and set LPDS in pwr_cr
+	__asm("wfi");// Wait For Interrupt (WFI)
 	
-	//while( !(i2c_read_byte(58) & (1<<6) )); // as long as there is no motion interrupt, wait here.
-	// NOTE: XXX When measuring current consumption from MPU6050 take into account I2C communication also takes current!!)
-	
-	//while(1); //TODO: set MCU to sleep
+	initClock(); // TODO: NB: after wakeup it runs from HSI, so initClock() again. 
+	// TODO: Set output pins to what they should be when not low power
+	// TODO: Re-enable interrupts 
+	ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
+        
+	// (In fact, reseting the entire thing might be simplest)
+}	
 
-}
-
-*/
 
 int main() // TODO: Lots of cleanup!
 {
@@ -235,10 +232,11 @@ int main() // TODO: Lots of cleanup!
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
 	i2c_write_byte(0x2D, 0x08); // power up ADXL345
-	delay(100000);
+	delay(900000);
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
 
+	goto_sleep(); // XXX Debug	
 		
 	while(1)
 	{	
@@ -318,4 +316,8 @@ void ADC_Handler(){
 	
 }
 
+void EXTI_Handler(void){
+// empty for now, could do wake up stuff here later TODO
+EXTI_PR |=(BIT5); // clear the flag. 
+}
 
