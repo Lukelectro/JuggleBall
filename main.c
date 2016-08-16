@@ -9,7 +9,7 @@ Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 
 Just done: First try at implementing sleep mode. Entire circuit still draws 55mA when asleep so something is wrong. 
-posibly I/O settings or clock settings. But it does go to sleep and wake up, it just is way to power hungry.
+posibly I/O settings or clock settings. But it does go to sleep and wake up, it just is way to power hungry. -- Yep, was the hardware. New chip draws 1mA, and that is settings (I hope...)
 
 */
 
@@ -125,7 +125,17 @@ void goto_sleep(){
          GPIOA_BSRR = (BIT0); // SET PA0
          // then stop timer? No, deepsleep should stop all clocks, does the same.
 	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
-	// Todo: Why does it still draw 55mA and isn't that a bit much even for a RUNNING cpu let alone a sleeping one?
+	
+	// TODO: Disable pheripherals / power them down.
+	ADC_CR &= ~(BIT0); // Power down ADC
+	I2C1_CR1 &=~ BIT0; // disable I2C1 module
+	// Removing clock from things won't save power, as all clocks STOP in STOP mode.
+	// But turning the PLL off might help. However, then I need another system clock first:
+	RCC_CFGR &= ~(BIT1|BIT0); // HSI as system clock again
+        RCC_CR &= ~BIT24; // disable PLL
+       
+       // Still 0.9mA AVCC and 0.3mA DVCC, should be 0.02 resp 0.05...
+	
 	
 	
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
@@ -139,11 +149,16 @@ void goto_sleep(){
 	
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
-	PWR_CR = 0x00000001; //clear pdds and set LPDS in pwr_cr (Low power regulator)
-	__asm("wfi");// Wait For Interrupt (WFI) / go to sleep
+	PWR_CR &= ~(BIT1); //Clear PDDS pwr_cr (Low power regulator)
+	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
+	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 	
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again. 
 	// TODO: Set output pins to what they should be when not low power
+	// TODO: Re-enable pheripherals:
+	ADC_CR |= (BIT0); // re-power ADC. Should it be re-initialized too?
+	I2C1_CR1 |= BIT0; // enable I2C1 module
+	
 	
 	// Re-enable (other) interrupts 
 	ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
@@ -153,14 +168,19 @@ void goto_sleep(){
 
 int main() // TODO: Lots of cleanup!
 {
+	//goto_sleep(); // XXX If it is indeed pheripherals that stay powered, lets try this, before any of them GET power in the first place.	
+	// yes that helped. So now disabling adc, pll, i2c etc. in goto_sleep(). Can't find timer power...
+	
 	initClock();
 
-	// Power up PORTA
+	// enable clock to Porta
 	RCC_AHBENR |= BIT17;
 	
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
 	
-	// TODO: Set all pins to a defined state so floating inputs do not consume power
+	// TODO: Set unused pins to a defined state so floating inputs do not consume power
+	GPIOF_MODER |= BIT0|BIT1|BIT2|BIT3; // PF0 and PF1 to Analog Input
+	GPIOB_MODER |= BIT2|BIT3; //PB1 to AIN
 		
 	//Set up I2C:
 	GPIOA_OSPEEDR |= 0x0FC00000; // High speed IO for I2C (?)
@@ -236,7 +256,8 @@ int main() // TODO: Lots of cleanup!
 	setpoints[0] = 0;
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
-	goto_sleep(); // XXX Debug	
+	
+	goto_sleep(); // XXX debug!
 	
 	i2c_write_byte(0x2D, 0x08); // power up ADXL345
 	delay(900000);
