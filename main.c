@@ -110,23 +110,62 @@ void i2c_write_byte(int addr, int data) {
     while (!(I2C1_ISR & BIT0));
 }
 
+
+setup_adc(){
+	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
+        
+        while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
+        
+        // make rest of settings before starting conversion:
+        ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
+        // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
+                               // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
+                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. 
+        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust so no OVF   
+        
+        ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.      
+        
+        /// ***interrupts*** ///
+        /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
+        NVIC_EnableIRQ(ADC1_COMP_IRQn); // enable ADC interrupt
+        NVIC_SetPriority(ADC1_COMP_IRQn,2); // set priority (to 2)
+        Fortunately the STM32F0xxx Cortex-M0 programming manual (PM0215) does document the NVIC. somewhat. And the CMSIS libs can be downloaded from st.com
+        I could just use them... But I don't :)
+        */
+        
+        ISER |= (BIT12); // Enable IRQ12, (That's the adc)
+        IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
+        //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+        
+        while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
+        
+        ADC_CR |= (BIT2); // Set ADSTART to start conversion  
+}
+
 void goto_sleep(){
 
 	// TODO: Set adxl to generate wakeup on activity
 	
-	// TODO: Disable interrupts and clear all pending interupts
+	// Disable interrupts
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
         
-	// (TODO): Set output pins to whatever makes them Low Power
+	//Set output pins to whatever makes them Low Power (TODO: There is still something floating as IVDD floats between 0.06 and 0.3mA)
 	 TIM3_CCR1 = 0; // set timer outputs 0
          TIM3_CCR2 = 0;
          TIM14_CCR1 = 0;
+         
+         GPIOA_MODER |= (BIT8|BIT12|BIT14); // set PWM outputs to analog mode (As intermediate state, I need to set and clear bits)
+         GPIOA_MODER &= ~(BIT9|BIT13|BIT15); // Set PWM outputs to digital outputs (By clearing the AF bit)
+         // TODO: For some reason PA6 does not go completely 7, causing the FET for the blue chanel to leak a bit. Added 10k pulldown in hardware.
+         // And not it does not seem to go high anymore... Another hardware fault?
+         
          GPIOA_BSRR = (BIT0); // SET PA0
          // then stop timer? No, deepsleep should stop all clocks, does the same.
 	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
 	
-	// TODO: Disable pheripherals / power them down.
+	// Disable pheripherals / power them down.
 	
 	//Power down ADC -- Is slightly more complicated then clearing aden:
 	if(ADC_CR&BIT2){// if adstart (If there is a ongoing conversion)
@@ -143,9 +182,6 @@ void goto_sleep(){
 	RCC_CFGR &= ~(BIT1|BIT0); // HSI as system clock again
         RCC_CR &= ~BIT24; // disable PLL
        
-       // Still 0.9mA AVCC and 0.3mA DVCC, should be 0.02 resp 0.05...
-	
-	
 	
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
 	GPIOA_PUPDR|=(BIT11); // enable pulldown op PA5.
@@ -164,13 +200,14 @@ void goto_sleep(){
 	
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again. 
 	// TODO: Set output pins to what they should be when not low power
-	// TODO: Re-enable pheripherals:
-	ADC_CR |= (BIT0); // re-power ADC. Should it be re-initialized too?
+	
+        GPIOA_MODER &= ~(BIT8|BIT12|BIT14); // set PWM outputs to input mode (As intermediate state, I need to set and clear bits)
+    	GPIOA_MODER |= (BIT9|BIT13|BIT15); // Set PWM outputs to AF/PWM 
+	
+	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
-	
-	
-	// Re-enable (other) interrupts 
-	ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
+	setup_adc(); // re enable / re setup adc, and its interrupts 
+	// TODO: It does not wake up as it should, ADC or PWM does not start?
         
 }	
 
@@ -228,37 +265,7 @@ int main() // TODO: Lots of cleanup!
         // Wait for ADCAL to be zero again:
         while (ADC_CR & (BIT31));
         // then power up and set up adc:
-        ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
-        
-        while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
-        
-        // make rest of settings before starting conversion:
-        ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
-        // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
-                               // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
-                               // BIT13: CONT. automatically restart conversion once previous conversion is finished. 
-        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust so no OVF   
-        
-        ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
-        
-        
-        
-        /// ***interrupts*** ///
-        /* from code example, on howto enable interrupt in NVIC. But nowhere in datasheet does it say how to init NVIC whithout those functions... 
-        NVIC_EnableIRQ(ADC1_COMP_IRQn); // enable ADC interrupt
-        NVIC_SetPriority(ADC1_COMP_IRQn,2); // set priority (to 2)
-        Fortunately the STM32F0xxx Cortex-M0 programming manual (PM0215) does document the NVIC. somewhat. And the CMSIS libs can be downloaded from st.com
-        I could just use them... But I don't :)
-        */
-        
-        ISER |= (BIT12); // Enable IRQ12, (That's the adc)
-        IPR3 |= 96; // set priority for IRQ12 (4*IPRn+IRQn), starting from 0, so for IRQ12 that's IPR3 bits 7 downto 0
-        //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
-        
-        while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
-        
-        ADC_CR |= (BIT2); // Set ADSTART to start conversion
+        setup_adc();
 
 	int dummy; // XXX
 	
