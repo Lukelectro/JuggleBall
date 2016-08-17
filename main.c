@@ -151,15 +151,10 @@ void goto_sleep(){
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
         
-	//Set output pins to whatever makes them Low Power (TODO: There is still something floating as IVDD floats between 0.06 and 0.3mA)
+	//Set output pins to whatever makes them Low Power 
 	 TIM3_CCR1 = 0; // set timer outputs 0
          TIM3_CCR2 = 0;
          TIM14_CCR1 = 0;
-         
-         GPIOA_MODER |= (BIT8|BIT12|BIT14); // set PWM outputs to analog mode (As intermediate state, I need to set and clear bits)
-         GPIOA_MODER &= ~(BIT9|BIT13|BIT15); // Set PWM outputs to digital outputs (By clearing the AF bit)
-         // TODO: For some reason PA6 does not go completely 7, causing the FET for the blue chanel to leak a bit. Added 10k pulldown in hardware.
-         // And not it does not seem to go high anymore... Another hardware fault?
          
          GPIOA_BSRR = (BIT0); // SET PA0
          // then stop timer? No, deepsleep should stop all clocks, does the same.
@@ -199,24 +194,16 @@ void goto_sleep(){
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 	
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again. 
-	// TODO: Set output pins to what they should be when not low power
-	
-        GPIOA_MODER &= ~(BIT8|BIT12|BIT14); // set PWM outputs to input mode (As intermediate state, I need to set and clear bits)
-    	GPIOA_MODER |= (BIT9|BIT13|BIT15); // Set PWM outputs to AF/PWM 
 	
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts 
-	// TODO: It does not wake up as it should, ADC or PWM does not start?
-        
+	
 }	
 
 
 int main() // TODO: Lots of cleanup!
 {
-	//goto_sleep(); // XXX If it is indeed pheripherals that stay powered, lets try this, before any of them GET power in the first place.	
-	// yes that helped. So now disabling adc, pll, i2c etc. in goto_sleep(). Can't find timer power...
-	
 	initClock();
 
 	// enable clock to Porta
@@ -224,7 +211,7 @@ int main() // TODO: Lots of cleanup!
 	
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1) 
 	
-	// TODO: Set unused pins to a defined state so floating inputs do not consume power
+	// Set unused pins to a defined state so floating inputs do not consume power
 	GPIOF_MODER |= BIT0|BIT1|BIT2|BIT3; // PF0 and PF1 to Analog Input
 	GPIOB_MODER |= BIT2|BIT3; //PB1 to AIN
 		
