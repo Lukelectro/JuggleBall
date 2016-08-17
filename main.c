@@ -127,7 +127,16 @@ void goto_sleep(){
 	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
 	
 	// TODO: Disable pheripherals / power them down.
-	ADC_CR &= ~(BIT0); // Power down ADC
+	
+	//Power down ADC -- Is slightly more complicated then clearing aden:
+	if(ADC_CR&BIT2){// if adstart (If there is a ongoing conversion)
+		ADC_CR|=BIT4;	// stop it by writing adstp
+		while(ADC_CR&BIT4);	// wait till adc stopped
+		}
+	ADC_CR|=BIT1;	// then write addis to disable adc
+	while(ADC_CR&BIT0);	// wait until aden = 0 to indicate adc is disabled
+	
+	
 	I2C1_CR1 &=~ BIT0; // disable I2C1 module
 	// Removing clock from things won't save power, as all clocks STOP in STOP mode.
 	// But turning the PLL off might help. However, then I need another system clock first:
