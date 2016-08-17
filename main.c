@@ -8,12 +8,11 @@ Tap: Part of juggle protocol: Change colour (Jump through a set of predefined pr
 Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 
-Just done: First try at implementing sleep mode. Entire circuit still draws 55mA when asleep so something is wrong. 
-posibly I/O settings or clock settings. But it does go to sleep and wake up, it just is way to power hungry. -- Yep, was the hardware. New chip draws 1mA, and that is settings (I hope...)
 
 */
 
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
+#include "adxl345.h" // for the register names
 
 //MAX setpoints 
 //(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
@@ -25,6 +24,10 @@ posibly I/O settings or clock settings. But it does go to sleep and wake up, it 
 #define SETPOINT 372
 
 #define I2C_ADR 0xA6 // adxl 345 alternate adres/sdo low (0x53+rw dus 0xA6/7)
+
+//TODO: a few (const) structs or array or something predefining "pretty" LED coulours.
+
+
 void delay(int dly)
 {
   while( dly--);
@@ -111,7 +114,7 @@ void i2c_write_byte(int addr, int data) {
 }
 
 
-setup_adc(){
+void setup_adc(){
 	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
         
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
@@ -122,7 +125,7 @@ setup_adc(){
         ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished. 
-        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)  TODO:Adjust so no OVF   
+        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)     
         
         ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.      
         
@@ -143,9 +146,28 @@ setup_adc(){
         ADC_CR |= (BIT2); // Set ADSTART to start conversion  
 }
 
-void goto_sleep(){
+void adxl_init(){
+// TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
+ i2c_write_byte(ADXL345_THRESH_TAP, 30); 
+ i2c_write_byte(ADXL345_DUR, 5);
+ i2c_write_byte(ADXL345_THRESH_INACT, 20);
+ i2c_write_byte(ADXL345_THRESH_ACT, 20);
+ 
+ i2c_write_byte(ADXL345_TIME_INACT, 10); // 10s
+ i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
+ i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
+ i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
+ i2c_write_byte(ADXL345_TAP_AXES, 0x07); // detect taps on all axes.
+ i2c_write_byte(ADXL345_BW_RATE, 0x1A); // Low power 100Hz (50uA active, lower yet in sleep).
+ i2c_write_byte(ADXL345_POWER_CTL,0x38); // 8Hz in sleep, be active now, link inactivity/activity, autosleep on inactivity
+ i2c_write_byte(ADXL345_INT_ENABLE,0x5C);// enable single tap, activity, inactivity & freefall interrupts
+ i2c_write_byte(ADXL345_INT_MAP,0x10); // Only activity to INT2 pin 
+}
 
-	// TODO: Set adxl to generate wakeup on activity
+void goto_sleep(){
+	
+ 	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
+ 	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
 	
 	// Disable interrupts
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
@@ -170,7 +192,7 @@ void goto_sleep(){
 	ADC_CR|=BIT1;	// then write addis to disable adc
 	while(ADC_CR&BIT0);	// wait until aden = 0 to indicate adc is disabled
 	
-	
+	while(I2C1_ISR&BIT15); // wait until I2C is no longer busy.
 	I2C1_CR1 &=~ BIT0; // disable I2C1 module
 	// Removing clock from things won't save power, as all clocks STOP in STOP mode.
 	// But turning the PLL off might help. However, then I need another system clock first:
@@ -186,6 +208,7 @@ void goto_sleep(){
 	// Enable exti interupt on PA5:
 	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
 	EXTI_RTSR |= (BIT5); // For rising ende
+ 	
 	
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
@@ -199,6 +222,10 @@ void goto_sleep(){
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts 
 	
+	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
+ 	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
+ 	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl, so MCU does not get sent back to sleep again by inactivity.
+ 	
 }	
 
 
@@ -260,9 +287,7 @@ int main() // TODO: Lots of cleanup!
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
 	
-	goto_sleep(); // XXX debug!
-	
-	i2c_write_byte(0x2D, 0x08); // power up ADXL345
+	adxl_init(); // power up and setup adxl345
 	delay(900000);
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
@@ -271,16 +296,38 @@ int main() // TODO: Lots of cleanup!
 	while(1)
 	{	
 		
-		int x,y,z, fifostat, buffer[6];
+		int x,y,z, intjes, buffer[6];
 	
 		i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go	
 		x=buffer[0]|(buffer[1]<<8); 
 		y=buffer[2]|(buffer[3]<<8); 
 		z=buffer[4]|(buffer[5]<<8); 
 	
+		//read adxl interrupts (Activity(BIT4), inactivity(BIT3), freefall (BIT2) , tap (BIT6))
+		intjes = i2c_read_byte(0x30);
 		
+		if(intjes&BIT6){ // on tap:
+		//TODO: Change colour to the next one from the predefined list for tap
+		// for now, be green;
+		setpoints[0]=SETPOINT/2;
+		}
 		
-		delay(100000); // give the adxl time
+		if(intjes&BIT2){ // on freefall:
+		//TODO: Change colour to the next one from the 2nd predefined list for freefall
+		// for now, be red
+		setpoints[1]=SETPOINT/2;
+		}
+		
+		if(intjes&BIT3){ // inactivity.
+		//TODO: Show rainbow fade and after that, go to sleep.
+		// for now, be blue
+		setpoints[2]=SETPOINT/4; // blue is extremely bright...
+		delay(900000);
+		goto_sleep();
+		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
+			
+		
+		delay(900000); // give the slow human time to see tap and things
 		
 		// because it is 2's complement, if bit 9 is set then bits 31 to 9 should also be set (To convert from 10 bit signed int to 32 bit signed int)
 		if(x&1<<9) x|=0xFFFFFC00; 
@@ -307,7 +354,7 @@ int main() // TODO: Lots of cleanup!
 		setpoints[1]=r;
 		setpoints[0]=g;
 		setpoints[2]=b;
-		
+		 // XXX No longer used if tap and freefall thing work out.
 		
 	} 
 	return 0;
