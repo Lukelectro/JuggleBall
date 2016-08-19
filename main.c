@@ -8,6 +8,7 @@ Tap: Part of juggle protocol: Change colour (Jump through a set of predefined pr
 Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 
+Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
 
 */
 
@@ -26,7 +27,31 @@ That should make for a nice lightshow when juggling: ball changing colour at cat
 #define I2C_ADR 0xA6 // adxl 345 alternate adres/sdo low (0x53+rw dus 0xA6/7)
 
 //TODO: a few (const) structs or array or something predefining "pretty" LED coulours.
+// maybe it's a good idea to scale this to max setpoint.
+// certainly it's a bad idea to hardcode values
+// Does cortex M0 have a hw divider? Float multiplier? Does my compiler use them?
+// Meh, premature optimalisation. Besides, I could just use floats, precalculate the arrays, and then use the calculated onces :)
+#define LEN_COLOR 24
+const int colorset_percentage[LEN_COLOR] = //r,g,b
+{
+ 100,0,0,    //red
+ 100,30,100, //white-ish bluegreen
+ 100,0,30,   //magenta/pink purple 
+ 0,100,0,    //green
+ 100,40,0,   //warmyellow
+ 0,0,100,     //blue
+ 100,60,0,    //coldyellow
+ 100,100,100, // white
+ }; 
+// How this works:  const array is filled with percentages of SETPOINT (Max). 
+// then setpoints are calculated as percentage of max and stored in a variable aray
+// as start of main, further down the variable arrai is used
+// of course this calculation could have been done at compile time as the values never change...
 
+
+
+//Because I want to change color differently on tap and freefall, I'll offset one of them a bit but use the same colorset.
+//If that does not work out, I make a 2nd colourset. Could even pick a random color from set on both events, instead of moving in a predetermined patern?
 
 void delay(int dly)
 {
@@ -148,7 +173,7 @@ void setup_adc(){
 
 void adxl_init(){
 // TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
- i2c_write_byte(ADXL345_THRESH_TAP, 30); 
+ i2c_write_byte(ADXL345_THRESH_TAP, 50); //TODO: Tune
  i2c_write_byte(ADXL345_DUR, 5);
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
@@ -159,13 +184,13 @@ void adxl_init(){
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
  i2c_write_byte(ADXL345_TAP_AXES, 0x07); // detect taps on all axes.
  i2c_write_byte(ADXL345_BW_RATE, 0x1A); // Low power 100Hz (50uA active, lower yet in sleep).
- i2c_write_byte(ADXL345_POWER_CTL,0x38); // 8Hz in sleep, be active now, link inactivity/activity, autosleep on inactivity
+ i2c_write_byte(ADXL345_POWER_CTL,0x08); // 8Hz in sleep, be active now, do not link inactivity/activity, do not autosleep on inactivity
  i2c_write_byte(ADXL345_INT_ENABLE,0x5C);// enable single tap, activity, inactivity & freefall interrupts
  i2c_write_byte(ADXL345_INT_MAP,0x10); // Only activity to INT2 pin 
 }
 
 void goto_sleep(){
-	
+	//i2c_write_byte(ADXL345_POWER_CTL,0x00); // Put ADXL in standbye (TODO: Maybe sleep? If it can still wake the MCU then?)
  	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
  	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
 	
@@ -287,75 +312,98 @@ int main() // TODO: Lots of cleanup!
 	setpoints[1] = 0;
 	setpoints[2] = SETPOINT/2;
 	
+	//setup array of nice collors
+	int colors[LEN_COLOR];
+	for(int i = 0;i<LEN_COLOR;i++){
+	colors[i]=colorset_percentage[i]*SETPOINT/100;
+	}
+	
 	adxl_init(); // power up and setup adxl345
 	delay(900000);
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
 
-		
-	while(1)
-	{	
-		
-		int x,y,z, intjes, buffer[6];
+
 	
-		i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go	
-		x=buffer[0]|(buffer[1]<<8); 
-		y=buffer[2]|(buffer[3]<<8); 
-		z=buffer[4]|(buffer[5]<<8); 
+		
+	while(1){	
+		int x,y,z, intjes, buffer[6]; 
+		static int cc=0, mode = 0;
 	
-		//read adxl interrupts (Activity(BIT4), inactivity(BIT3), freefall (BIT2) , tap (BIT6))
-		intjes = i2c_read_byte(0x30);
+		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		
-		if(intjes&BIT6){ // on tap:
-		//TODO: Change colour to the next one from the predefined list for tap
-		// for now, be green;
-		setpoints[0]=SETPOINT/2;
-		}
 		
-		if(intjes&BIT2){ // on freefall:
-		//TODO: Change colour to the next one from the 2nd predefined list for freefall
-		// for now, be red
-		setpoints[1]=SETPOINT/2;
-		}
-		
-		if(intjes&BIT3){ // inactivity.
+		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
 		//TODO: Show rainbow fade and after that, go to sleep.
 		// for now, be blue
 		setpoints[2]=SETPOINT/4; // blue is extremely bright...
-		delay(900000);
+		delay(1100000);
 		goto_sleep();
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
+		
+		
+		// TODO: switch mode on double tap
+		// TODO: and enmum for clarity
+	
+		switch(mode){
+		case 0:
+		
+			// TODO: only read when new data is available
+			i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go	
+			x=buffer[0]|(buffer[1]<<8); 
+			y=buffer[2]|(buffer[3]<<8); 
+			z=buffer[4]|(buffer[5]<<8); 
+	
+			// because it is 2's complement, if bit 9 is set then bits 31 to 9 should also be set (To convert from 10 bit signed int to 32 bit signed int)
+			if(x&1<<9) x|=0xFFFFFC00; 
+			if(y&1<<9) y|=0xFFFFFC00;
+			if(z&1<<9) z|=0xFFFFFC00;
+		
+			//scale XYZ to SETPOINT as max
+			float g,r,b;
+			g=x*SETPOINT/(1<<8); // adxl is 10 bit, signed.
+			r=y*SETPOINT/(1<<8);
+			b=z*SETPOINT/(1<<8);
+		
+			if(g>SETPOINT) g=SETPOINT; // crowbar (force safe value)
+			if(r>SETPOINT) r=SETPOINT; // crowbar (force safe value)
+			if(b>SETPOINT) b=SETPOINT; // crowbar (force safe value)
+			if(g<0) g=0; // crowbar (force safe value / discard if below zero)
+			if(r<0) r=0; // crowbar (force safe value / discard if below zero)
+			if(b<0) b=0; // crowbar (force safe value / discard if below zero)
+		
+		
+			setpoints[1]=r;
+			setpoints[0]=g;
+			setpoints[2]=b;
 			
+			break;
 		
-		delay(900000); // give the slow human time to see tap and things
+		case 1:
 		
-		// because it is 2's complement, if bit 9 is set then bits 31 to 9 should also be set (To convert from 10 bit signed int to 32 bit signed int)
-		if(x&1<<9) x|=0xFFFFFC00; 
-		if(y&1<<9) y|=0xFFFFFC00;
-		if(z&1<<9) z|=0xFFFFFC00;
+			if(intjes&BIT6){ // on tap:
+			//Change colour to the next one from the predefined list for tap
+				if ((2+cc)>LEN_COLOR) cc=0; else cc+=3;
+				setpoints[0]=colors[1+cc];
+				setpoints[1]=colors[0+cc];
+				setpoints[2]=colors[2+cc];
+			}
+			break;
+			// TODO: Debounce taps
+			
+		case 2:
 		
-		//scale XYZ to SETPOINT as max
-		float g,r,b;
-		g=x*SETPOINT/(1<<8); // adxl is 10 bit, signed.
-		r=y*SETPOINT/(1<<8);
-		b=z*SETPOINT/(1<<8);
+			if(intjes&BIT2){ // on freefall:
+			//TODO: Change colour to the next one from the 2nd predefined list for freefall
+			// for now, be red
+			setpoints[1]=SETPOINT/2;
+			}
+			break;
 		
-		// TODO: Think of a nice way to use below zero values / use the acellerometer in a juggle ball.
-		// Tap and freefall interrupts of adxl345 could be nice. And inactivity/activity for sleep/wake uC
-		
-		if(g>SETPOINT) g=SETPOINT; // crowbar (force safe value)
-		if(r>SETPOINT) r=SETPOINT; // crowbar (force safe value)
-		if(b>SETPOINT) b=SETPOINT; // crowbar (force safe value)
-		if(g<0) g=0; // crowbar (force safe value / discard if below zero)
-		if(r<0) r=0; // crowbar (force safe value / discard if below zero)
-		if(b<0) b=0; // crowbar (force safe value / discard if below zero)
-		
-		
-		setpoints[1]=r;
-		setpoints[0]=g;
-		setpoints[2]=b;
-		 // XXX No longer used if tap and freefall thing work out.
-		
+		default:
+			mode = 0;
+			break;
+		}
 	} 
 	return 0;
 }
