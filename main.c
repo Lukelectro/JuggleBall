@@ -10,6 +10,8 @@ That should make for a nice lightshow when juggling: ball changing colour at cat
 
 Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
 
+TODO: Smooth modeswitching needs more work; code is getting messy so clean up; Hardware smoked out (FET stayed on somehow, but was during debug) -> repair.
+
 */
 
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
