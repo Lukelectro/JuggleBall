@@ -96,7 +96,8 @@ void initClock()
 
 
 volatile int adcresult; // can be read in debugger too.
-int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};	
+int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
+unsigned int tick=0; // Gets ++t in adc handler and used for timeouts	
 
 
 // spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
@@ -150,7 +151,7 @@ void setup_adc(){
         ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result 
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished. 
-        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk)     
+        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, all three set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.)     
         
         ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.      
         
@@ -178,7 +179,7 @@ void adxl_init(){
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
  
- i2c_write_byte(ADXL345_TIME_INACT, 10); // 10s
+ i2c_write_byte(ADXL345_TIME_INACT, 120); // 120s
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -253,6 +254,24 @@ void goto_sleep(){
  	
 }	
 
+void AllesUit(){
+	setpoints[0]=0;
+	setpoints[1]=0;
+	setpoints[2]=0;	
+}
+
+void blink (int num){
+ GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
+ delay(200000);
+ 
+while(num--){
+ GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
+ delay(200000);
+ GPIOA_BSRR = (BIT16); // CLEAR PA0 (LED aan)
+ delay(100000); 
+ }
+         
+}
 
 int main() // TODO: Lots of cleanup!
 {
@@ -323,15 +342,17 @@ int main() // TODO: Lots of cleanup!
 	setpoints[1] = SETPOINT/2; // to see how much time
 	setpoints[2]=0;
 
-
+	blink(4);
 	
 		
 	while(1){	
 		int x,y,z, intjes, buffer[6]; 
-		static int cc=0, mode = 0;
-	
-		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
+		static int cc=0, mode = 0, tap;
+		static unsigned int prevtick;
+		enum mode{Direct=0, ChangeOnTap, freefall};
 		
+		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
+		// reading resets them, so only read once a cycle
 		
 		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
 		//TODO: Show rainbow fade and after that, go to sleep.
@@ -342,7 +363,20 @@ int main() // TODO: Lots of cleanup!
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
 		
 		
-		// TODO: switch mode on double tap
+		// switch mode triple tap TODO: refine for reliablillity and should not trigger in normal juggling
+		if(intjes&BIT6){ // on tap
+ 			prevtick=tick;
+ 			tap++;
+		}
+		if( (tick-prevtick)>150000 ){ // tick updates at 50104.384Hz, so this is... seconds.
+			tap=0; 
+		}
+		else if(tap>3){
+			mode++; // resets due to default case, so no fuss here.
+			AllesUit();
+			blink(mode);
+		}
+		
 		// TODO: and enmum for clarity
 	
 		switch(mode){
@@ -397,7 +431,7 @@ int main() // TODO: Lots of cleanup!
 			//TODO: Change colour to the next one from the 2nd predefined list for freefall
 			// for now, be red
 			setpoints[1]=SETPOINT/2;
-			}
+			}else AllesUit();
 			break;
 		
 		default:
@@ -411,7 +445,8 @@ int main() // TODO: Lots of cleanup!
 
 
 void ADC_Handler(){
-        GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
+	tick++;
+        //GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
         
         static int ch=0; // keep between invocations
         static int pwm[3];
@@ -437,7 +472,7 @@ void ADC_Handler(){
         	ADC_ISR&=(BIT3); // reset flag
         }
         
-        GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
+        //GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
 	
 }
 
