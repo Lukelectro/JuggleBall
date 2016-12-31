@@ -181,7 +181,7 @@ void adxl_init(){
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
  
- i2c_write_byte(ADXL345_TIME_INACT, 120); // 120s
+ i2c_write_byte(ADXL345_TIME_INACT, 10); // 10s
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -200,13 +200,7 @@ void goto_sleep(){
 	// Disable interrupts
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3. 
         
-        
-	//Set output pins to whatever makes them Low Power 
-	 TIM3_CCR1 = 0; // set timer outputs 0
-         TIM3_CCR2 = 0;
-         TIM14_CCR1 = 0;
          
-         GPIOA_BSRR = (BIT0); // SET PA0
          // then stop timer? No, deepsleep should stop all clocks, does the same.
 	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
 	
@@ -237,6 +231,20 @@ void goto_sleep(){
 	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
 	EXTI_RTSR |= (BIT5); // For rising ende
  	
+ 	//Set output pins to whatever makes them Low Power 
+	 TIM3_CCR1 = 0; // set timer outputs 0 TODO:FET/coil smoked on sleep entry. Why does fet stay on?
+         TIM3_CCR2 = 0;
+         TIM14_CCR1 = 0;
+         
+         
+         //TODO: force output pins of timer to 0 (TIMx_CCMRx)
+         TIM14_CCMR1 &= ~(BIT5); // it was once set to PWM mode 1, with OC1M to 110. Those are 6downto4. By clearing bit 5 its set to force low. 
+         			// maybe should build in a little data hiding here
+         TIM3_CCMR1 &= ~(BIT5|BIT13); // switch TIM3 outputs to inactive in the same way (2 ch, so OCM1 and OCM2)
+         
+         
+         GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
+        
 	
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
@@ -244,7 +252,12 @@ void goto_sleep(){
 	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 	
+	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
+	
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again. 
+	
+	TIM14_CCMR1 |= (BIT5); // set TIM14 back to PWM mode
+	TIM3_CCMR1 |= (BIT5|BIT13); // idem for TM3
 	
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
@@ -274,6 +287,25 @@ while(num--){
  }
          
 }
+
+void rainbow(){
+	for(int i=0;i<SETPOINT;i++){
+		setpoints[2]=i;
+		setpoints[0]=SETPOINT-i;
+		delay(2000);
+	}
+	for(int i=0;i<SETPOINT;i++){
+		setpoints[1]=i;
+		setpoints[2]=SETPOINT-i;
+		delay(2000);
+	}
+	for(int i=0;i<SETPOINT;i++){
+		setpoints[1]=SETPOINT-i;
+		setpoints[0]=i;
+		delay(2000);
+	}
+}
+
 
 int main() // TODO: Lots of cleanup!
 {
@@ -357,10 +389,9 @@ int main() // TODO: Lots of cleanup!
 		// reading resets them, so only read once a cycle
 		
 		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
-		//TODO: Show rainbow fade and after that, go to sleep.
-		// for now, be blue
-		setpoints[2]=SETPOINT/4; // blue is extremely bright...
-		delay(1100000);
+		
+		for(int i = 0;i<3;i++) rainbow(); // Show rainbow fade and after that, go to sleep.
+	
 		goto_sleep();
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
 		
@@ -370,10 +401,11 @@ int main() // TODO: Lots of cleanup!
  			prevtick=tick;
  			tap++;
 		}
-		if( (tick-prevtick)>150000 ){ // tick updates at 50104.384Hz, so this is... seconds.
+		if( (tick-prevtick)> 150000 ){ // tick updates at 50104.384Hz (50kHz), so this is ... seconds. (Should be 1.5s)
 			tap=0; 
 		}
 		else if(tap>3){
+			tap=0; // reset counter
 			mode++; // resets due to default case, so no fuss here.
 			AllesUit();
 			blink(mode);
@@ -432,7 +464,8 @@ int main() // TODO: Lots of cleanup!
 			if(intjes&BIT2){ // on freefall:
 			//TODO: Change colour to the next one from the 2nd predefined list for freefall
 			// for now, be red
-			setpoints[1]=SETPOINT/2;
+			setpoints[1]=SETPOINT;
+			delay(100000);
 			}else AllesUit();
 			break;
 		
