@@ -267,10 +267,10 @@ void blink (int num){
  delay(200000);
  
 while(num--){
- GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
- delay(200000);
  GPIOA_BSRR = (BIT16); // CLEAR PA0 (LED aan)
- delay(100000); 
+ delay(100000);
+  GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
+ delay(200000); 
  }
          
 }
