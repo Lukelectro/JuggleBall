@@ -51,6 +51,11 @@ const int colorset_percentage[LEN_COLOR] = //r,g,b
 // of course this calculation could have been done at compile time as the values never change...
 
 
+volatile int adcresult; // can be read in debugger too.
+int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
+unsigned int tick=0; // Gets ++t in adc handler and used for timeouts	
+
+
 
 //Because I want to change color differently on tap and freefall, I'll offset one of them a bit but use the same colorset.
 //If that does not work out, I make a 2nd colourset. Could even pick a random color from set on both events, instead of moving in a predetermined patern?
@@ -94,13 +99,6 @@ void initClock()
         
         RCC_APB2ENR |= BIT9; // enable clock to adc
 }
-
-
-
-volatile int adcresult; // can be read in debugger too.
-int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
-unsigned int tick=0; // Gets ++t in adc handler and used for timeouts	
-
 
 // spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
 // Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050/adxl345)
@@ -172,6 +170,20 @@ void setup_adc(){
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
         ADC_CR |= (BIT2); // Set ADSTART to start conversion  
+}
+
+void InitUart(){
+//USART1, 4800b8n1 (TX en SWCLK share a pin so this one is available on the pgming header, PA14 AF1)
+USART1_BRR= 48000000/4800; //0x2710;        //48Mhz/4800b
+USART1_CR1|= (1<<3|1<<0);  // enable transmitter, enable usart (must be done after config BR)
+
+GPIOA_AFRH|=(1<<24);// switch PA14 to AF1, please note this does break debugging as that uses the same pin but as AF0
+GPIOA_MODER|=(1<<29); // Switch PA14 to AF.
+}
+
+void UartSendByte(int data){
+USART1_TDR=data&0x0000000F;
+while(!(USART1_ISR&(1<<6))); // wait untill TC is set
 }
 
 void adxl_init(){
@@ -262,6 +274,7 @@ void goto_sleep(){
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts 
+	InitUart();
 	
 	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
  	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
@@ -377,22 +390,23 @@ int main() // TODO: Lots of cleanup!
 	setpoints[2]=0;
 
 	blink(4);
-	
+
+	InitUart();
 		
 	while(1){	
 		int x,y,z, intjes, buffer[6]; 
 		static int cc=0, mode = 0, tap;
 		static unsigned int prevtick;
 		enum mode{Direct=0, ChangeOnTap, freefall};
-		
+	
+		UartSendByte(0x5A); // just as a test;
+	
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
-		
-		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
-		
-		for(int i = 0;i<3;i++) rainbow(); // Show rainbow fade and after that, go to sleep.
 	
-		goto_sleep();
+		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
+			for(int i = 0;i<3;i++) rainbow(); // Show rainbow fade and after that, go to sleep.
+			goto_sleep();
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
 		
 		
