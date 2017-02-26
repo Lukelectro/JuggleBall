@@ -105,12 +105,12 @@ void setup_adc(){
 
 void adxl_init(){
 // TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
- i2c_write_byte(ADXL345_THRESH_TAP, 50); //TODO: Tune
- i2c_write_byte(ADXL345_DUR, 5);
+ i2c_write_byte(ADXL345_THRESH_TAP, 40); // 62.5mg per increment
+ i2c_write_byte(ADXL345_DUR, 15);	// 625us per increment	
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
  
- i2c_write_byte(ADXL345_TIME_INACT, 10); // 10s
+ i2c_write_byte(ADXL345_TIME_INACT, 10); // seconds (10)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -388,7 +388,7 @@ int main() // TODO: Lots of cleanup!
 				setpoints[2]=colors[2+cc];
 			}
 			break;
-			// TODO: Debounce taps
+			// TODO: Debounce taps (Is there a way for the sensor to wait, say 50 ms after a tap?)
 			
 		case 2:
 		
