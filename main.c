@@ -18,7 +18,7 @@ TODO: Smooth modeswitching needs more work; code is getting messy so clean up;
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
 #include "adxl345.h" // for the register names
 #include "config.h"  // to config max current / array of "pretty colors" etc.
-#include "uart.h"
+//#include "uart.h"
 #include "adxl_i2c.h"
 
 volatile int adcresult; // can be read in debugger too.
@@ -191,7 +191,7 @@ void goto_sleep(){
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts 
-	InitUart();
+	//InitUart();
 	
 	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
  	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
@@ -308,7 +308,7 @@ int main() // TODO: Lots of cleanup!
 
 	blink(4);
 
-	InitUart();
+	//InitUart();
 		
 	while(1){	
 		int x,y,z, intjes, buffer[6]; 
@@ -316,7 +316,7 @@ int main() // TODO: Lots of cleanup!
 		static unsigned int prevtick;
 		enum mode{Direct=0, ChangeOnTap, freefall};
 	
-		UartSendByte(0x5A); // just as a test;
+		//UartSendByte(0x5A); // just as a test;
 	
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
