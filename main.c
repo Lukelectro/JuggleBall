@@ -9,47 +9,17 @@ Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 
 Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
+(Or change mode on {double? tripple?} tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
 
-TODO: Smooth modeswitching needs more work; code is getting messy so clean up; Hardware smoked out (FET stayed on somehow, but was during debug) -> repair.
+TODO: Smooth modeswitching needs more work; code is getting messy so clean up; 
 
 */
 
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
 #include "adxl345.h" // for the register names
-
-//MAX setpoints 
-//(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
-//(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
-//(2^12/3v3 * 0.02 * 15)= 372 -- 20mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor.
-#define SETPOINT1 372 
-#define SETPOINT2 372 
-#define SETPOINT3 372 
-#define SETPOINT 372
-
-#define I2C_ADR 0xA6 // adxl 345 alternate adres/sdo low (0x53+rw dus 0xA6/7)
-
-//TODO: a few (const) structs or array or something predefining "pretty" LED coulours.
-// maybe it's a good idea to scale this to max setpoint.
-// certainly it's a bad idea to hardcode values
-// Does cortex M0 have a hw divider? Float multiplier? Does my compiler use them?
-// Meh, premature optimalisation. Besides, I could just use floats, precalculate the arrays, and then use the calculated onces :)
-#define LEN_COLOR 24
-const int colorset_percentage[LEN_COLOR] = //r,g,b
-{
- 100,0,0,    //red
- 100,30,100, //white-ish bluegreen
- 100,0,30,   //magenta/pink purple 
- 0,100,0,    //green
- 100,40,0,   //warmyellow
- 0,0,100,     //blue
- 100,60,0,    //coldyellow
- 100,100,100, // white
- }; 
-// How this works:  const array is filled with percentages of SETPOINT (Max). 
-// then setpoints are calculated as percentage of max and stored in a variable aray
-// as start of main, further down the variable arrai is used
-// of course this calculation could have been done at compile time as the values never change...
-
+#include "config.h"  // to config max current / array of "pretty colors" etc.
+#include "uart.h"
+#include "adxl_i2c.h"
 
 volatile int adcresult; // can be read in debugger too.
 int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
@@ -100,45 +70,6 @@ void initClock()
         RCC_APB2ENR |= BIT9; // enable clock to adc
 }
 
-// spiekbriefje: I2C_CR2 |= (NBYTES 23 downto 16)|(SLADR) ;// BIT25=AutoEnd, Bit14 = Manualy generate a STOP, bit13 = generate a START BIT10=R/!W
-// Slave adres on 7:1 with bit 0 don't care (For 7 bit adr. slaves such as MPU6050/adxl345)
-
-int i2c_read_byte(int addr) { 
-    I2C1_CR2 = (BIT13)|(1<<16)|(I2C_ADR); // Write 1 byte to I2C_ADR and sent start
-    I2C1_TXDR = addr;
-    while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
-
-    I2C1_CR2 = BIT10 | BIT13 | (1<<16) | I2C_ADR | BIT25; // read (BIT10) one byte (1<<16) from I2C_ADR, generate start (BIT13), and generate stop when done (BIT25)
-    
-    while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
-    return I2C1_RXDR;
-    
-}
-
-void i2c_read_n_bytes(int addr, int n, int* buff) { 
-    I2C1_CR2 = (BIT13)|(1<<16)|(I2C_ADR); // Write 1 byte to I2C_ADR and sent start
-    I2C1_TXDR = addr;
-    while (!(I2C1_ISR & BIT0)); // wait for TX empty before changing CR2 and sending next byte
-
-    I2C1_CR2 = BIT10 | BIT13 | ((n&0xFF)<<16) | I2C_ADR | BIT25; // read (BIT10) n byte (<<16) from I2C_ADR, generate start (BIT13), and generate stop when done (BIT25)
-    
-    
-    for(int i=0;i<n;i++){
-    	while (!(I2C1_ISR & BIT2)); // wait till data in receive buffer 
-    	buff[i]=I2C1_RXDR;
-    }
-}
-
-void i2c_write_byte(int addr, int data) { 
-    I2C1_CR2 = (BIT13 | (2<<16) | I2C_ADR | BIT25);
-  
-    I2C1_TXDR = addr;
-    while (!(I2C1_ISR & BIT0));
-
-    I2C1_TXDR = data;
-    while (!(I2C1_ISR & BIT0));
-}
-
 
 void setup_adc(){
 	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
@@ -170,20 +101,6 @@ void setup_adc(){
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for starting a coversion
         
         ADC_CR |= (BIT2); // Set ADSTART to start conversion  
-}
-
-void InitUart(){
-//USART1, 4800b8n1 (TX en SWCLK share a pin so this one is available on the pgming header, PA14 AF1)
-USART1_BRR= 48000000/4800; //0x2710;        //48Mhz/4800b
-USART1_CR1|= (1<<3|1<<0);  // enable transmitter, enable usart (must be done after config BR)
-
-GPIOA_AFRH|=(1<<24);// switch PA14 to AF1, please note this does break debugging as that uses the same pin but as AF0
-GPIOA_MODER|=(1<<29); // Switch PA14 to AF.
-}
-
-void UartSendByte(int data){
-USART1_TDR=data&0x0000000F;
-while(!(USART1_ISR&(1<<6))); // wait untill TC is set
 }
 
 void adxl_init(){
