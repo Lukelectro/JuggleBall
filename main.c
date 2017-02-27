@@ -104,9 +104,24 @@ void setup_adc(){
 }
 
 void adxl_init(){
+/* 
+Datasheet excerpt:
+"
+Therefore, some experimentation with values for the
+DUR, latent, window, and THRESH_TAP registers is required.
+In general, a good starting point is to set the DUR register to a
+value greater than 0x10 (10 ms), the latent register to a value greater
+than 0x10 (20 ms), the window register to a value greater than
+0x40 (80 ms), and the THRESH_TAP register to a value greater
+than 0x30 (3 g).
+"
+*/
+
 // TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
- i2c_write_byte(ADXL345_THRESH_TAP, 40); // 62.5mg per increment
- i2c_write_byte(ADXL345_DUR, 15);	// 625us per increment	
+ i2c_write_byte(ADXL345_THRESH_TAP, 0x30); // 62.5mg per increment
+ i2c_write_byte(ADXL345_DUR, 0x12);	  // 625us per increment	
+ i2c_write_byte(ADXL345_LATENT, 20);      
+
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
  
