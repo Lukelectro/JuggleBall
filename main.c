@@ -118,9 +118,9 @@ than 0x30 (3 g).
 */
 
 // TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
- i2c_write_byte(ADXL345_THRESH_TAP, 0x30); // 62.5mg per increment
- i2c_write_byte(ADXL345_DUR, 0x12);	  // 625us per increment	
- i2c_write_byte(ADXL345_LATENT, 20);      
+ i2c_write_byte(ADXL345_THRESH_TAP, 0x2D); // 62.5mg per increment
+ i2c_write_byte(ADXL345_DUR, 0x10);	  // 625us per increment	
+ i2c_write_byte(ADXL345_LATENT, 0x80);      
 
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
@@ -343,14 +343,15 @@ int main() // TODO: Lots of cleanup!
 		
 		
 		// switch mode triple tap TODO: refine for reliablillity and should not trigger in normal juggling
+		// TODO: feedback when tap is detected?
 		if(intjes&BIT6){ // on tap
  			prevtick=tick;
  			tap++;
 		}
-		if( (tick-prevtick)> 150000 ){ // tick updates at 50104.384Hz (50kHz), so this is ... seconds. (Should be 1.5s)
+		if( (tick-prevtick)> 100000 ){ // tick updates at 50104.384Hz ticks per second (approx. 50kHz)
 			tap=0; 
 		}
-		else if(tap>3){
+		else if(tap>2){ // TRIPLE tap. 3 and up > 2 :)
 			tap=0; // reset counter
 			mode++; // resets due to default case, so no fuss here.
 			AllesUit();
