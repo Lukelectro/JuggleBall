@@ -14,7 +14,7 @@ Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 
 TODO: Smooth modeswitching needs more work; code is getting messy so clean up; 
 
 */
-
+#include <stdbool.h>
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example). 
 #include "adxl345.h" // for the register names
 #include "config.h"  // to config max current / array of "pretty colors" etc.
@@ -125,7 +125,7 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
  
- i2c_write_byte(ADXL345_TIME_INACT, 10); // seconds (10)
+ i2c_write_byte(ADXL345_TIME_INACT, 30); // seconds (30)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -328,8 +328,9 @@ int main() // TODO: Lots of cleanup!
 	while(1){	
 		int x,y,z, intjes, buffer[6]; 
 		static int cc=0, mode = 0, tap;
-		static unsigned int prevtick;
-		enum mode{Direct=0, ChangeOnTap, freefall};
+		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
+		static bool Juggle=false; // Juggle in progress?
+		enum mode{Direct=0, ChangeOnTap, freefall, TimeSinceLastFall};
 	
 		//UartSendByte(0x5A); // just as a test;
 	
@@ -342,13 +343,29 @@ int main() // TODO: Lots of cleanup!
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
 		
 		
-		// switch mode triple tap TODO: refine for reliablillity and should not trigger in normal juggling
+
+		// tick updates at 50104.384Hz ticks per second (approx. 50kHz)
+		if(intjes&BIT2){ // detect freefall to keep time since last freefal to prevent modeswitch during juggle
+			prevfftick=tick;
+			Juggle = true;		
+		}else if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 15 seconds ago
+			Juggle = false;
+		}
+		// TODO: 752000 is shorter then 15s. So tick is apearently faster. Investigate!
+		// tick =adc interrupt. triggers eoc and eosq. eoc at 50104.384HZ, eosqc "once every 3 eocs" = + 25%; tick runs at 62.6Khz?
+		// then 945000 should do the trick for 15s, but it is still faster... Investigate further!
+
+		// switch mode triple tap 
 		// TODO: feedback when tap is detected?
-		if(intjes&BIT6){ // on tap
- 			prevtick=tick;
+		if((intjes&BIT6)&&(!Juggle)){ // on tap but not while juggling
+ 			prevtaptick=tick;
  			tap++;
 		}
-		if( (tick-prevtick)> 100000 ){ // tick updates at 50104.384Hz ticks per second (approx. 50kHz)
+		
+		// tick updates at 50104.384Hz ticks per second (approx. 50kHz)
+		if( tick > (unsigned int)(prevtaptick+100000) ){ 
+		// if( (tick-prevtick)> 100000 ), "modulo max_int" to handle overflows
+		// 100000 is about 2 seconds to tripple-tap. (Based on 50Khz tick while 63Khz might be closer)
 			tap=0; 
 		}
 		else if(tap>2){ // TRIPLE tap. 3 and up > 2 :)
@@ -415,7 +432,9 @@ int main() // TODO: Lots of cleanup!
 			delay(100000);
 			}else AllesUit();
 			break;
-		
+		case 3:
+			if(Juggle) setpoints[2]=SETPOINT; else AllesUit(); // remain blue for .. ticks after freefall	
+			break;	
 		default:
 			mode = 0;
 			break;
