@@ -415,18 +415,17 @@ int main() // TODO: Lots of cleanup!
 		
 			if(intjes&BIT6){ // on tap:
 			//Change colour to the next one from the predefined list for tap
-				if ((2+cc)>LEN_COLOR) cc=0; else cc+=3;
+				if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
 				setpoints[0]=colors[1+cc];
 				setpoints[1]=colors[0+cc];
 				setpoints[2]=colors[2+cc];
 			}
 			break;
-			// TODO: Debounce taps (Is there a way for the sensor to wait, say 50 ms after a tap?)
 			
 		case 2:
 		
 			if(intjes&BIT2){ // on freefall:
-			//TODO: Change colour to the next one from the 2nd predefined list for freefall
+			//TODO: Change colour to the next one from the 2nd predefined list for freefall (Uhm, nope as there are multiple interrupts per fall.)
 			// for now, be red
 			setpoints[1]=SETPOINT;
 			delay(100000);
