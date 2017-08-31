@@ -11,6 +11,8 @@ That should make for a nice lightshow when juggling: ball changing colour at cat
 Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
 (Or change mode on {double? tripple?} tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
 
+Other idea: Maybe not use tap to detect catch, but detect end-of-freefall? (TODO: test if end of freefal is more accurate as catch detection)
+
 TODO: Smooth modeswitching needs more work; code is getting messy so clean up; 
 
 */
@@ -20,6 +22,7 @@ TODO: Smooth modeswitching needs more work; code is getting messy so clean up;
 #include "config.h"  // to config max current / array of "pretty colors" etc.
 //#include "uart.h"
 #include "adxl_i2c.h"
+
 
 volatile int adcresult; // can be read in debugger too.
 int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
@@ -329,7 +332,7 @@ int main() // TODO: Lots of cleanup!
 		int x,y,z, intjes, buffer[6]; 
 		static int cc=0, mode = 0, tap;
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
-		static bool Juggle=false; // Juggle in progress?
+		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched? 
 		enum mode{Direct=0, ChangeOnTap, freefall, TimeSinceLastFall};
 	
 		//UartSendByte(0x5A); // just as a test;
@@ -348,9 +351,25 @@ int main() // TODO: Lots of cleanup!
 		if(intjes&BIT2){ // detect freefall to keep time since last freefal to prevent modeswitch during juggle
 			prevfftick=tick;
 			Juggle = true;		
-		}else if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 15 seconds ago
+			Flying=true;
+		}else{ 
+			
+			if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 15 seconds ago (TODO: Seems shorter! Investigate!)
 			Juggle = false;
+			}
+			
+			if( tick > (unsigned int)(prevfftick+20000) ){ // If a freefall just ended, assume ball is catched 
+			//(increase wait time when falsely assumed, decrease when lagging too much)
+			// (Uses tick to prevent false catch detection while still falling)
+				if(Flying){ // Only detect catches when previously falling (flying). Otherwise lying still counts as a catch...
+					Flying = false; 
+					Catch = true;
+				}
+			}
+			
 		}
+			
+			
 		// TODO: 752000 is shorter then 15s. So tick is apearently faster. Investigate!
 		// tick =adc interrupt. triggers eoc and eosq. eoc at 50104.384HZ, eosqc "once every 3 eocs" = + 25%; tick runs at 62.6Khz?
 		// then 945000 should do the trick for 15s, but it is still faster... Investigate further!
@@ -362,7 +381,7 @@ int main() // TODO: Lots of cleanup!
  			tap++;
 		}
 		
-		// tick updates at 50104.384Hz ticks per second (approx. 50kHz)
+		// tick updates at 50104.384Hz ticks per second (approx. 50kHz) (TODO: Investigate if/why faster)
 		if( tick > (unsigned int)(prevtaptick+100000) ){ 
 		// if( (tick-prevtick)> 100000 ), "modulo max_int" to handle overflows
 		// 100000 is about 2 seconds to tripple-tap. (Based on 50Khz tick while 63Khz might be closer)
@@ -378,7 +397,7 @@ int main() // TODO: Lots of cleanup!
 		// TODO: and enmum for clarity
 	
 		switch(mode){
-		case 0:
+		case 0: // colour change based on orientation to gravity / test mode
 		
 			// TODO: only read when new data is available
 			i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go	
@@ -411,8 +430,29 @@ int main() // TODO: Lots of cleanup!
 			
 			break;
 		
-		case 1:
+		case 1: 
+		// clourchange on catch / juggle modue, End-Of-FreeFall based
 		
+			if(Catch){ // on catch:
+			//Change colour to the next one from the predefined list for catch
+				if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
+				setpoints[0]=colors[1+cc];
+				setpoints[1]=colors[0+cc];
+				setpoints[2]=colors[2+cc];
+				Catch=false;
+			}
+		
+		/*
+		// hmmz, lets test catch detection in a simpler way first:
+			if(Catch){
+				setpoints[1]=SETPOINT1;
+				Catch=false;
+				}
+				else AllesUit(); 	
+		*/ 
+	
+	     /*
+		 // clourchange on catch / juggle modue, tap based, less accurate
 			if(intjes&BIT6){ // on tap:
 			//Change colour to the next one from the predefined list for tap
 				if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
@@ -420,10 +460,12 @@ int main() // TODO: Lots of cleanup!
 				setpoints[1]=colors[0+cc];
 				setpoints[2]=colors[2+cc];
 			}
+			 
+		*/
+		
 			break;
 			
-		case 2:
-		
+		case 2: // red while freefalling / test mode
 			if(intjes&BIT2){ // on freefall:
 			//TODO: Change colour to the next one from the 2nd predefined list for freefall (Uhm, nope as there are multiple interrupts per fall.)
 			// for now, be red
@@ -431,9 +473,14 @@ int main() // TODO: Lots of cleanup!
 			delay(100000);
 			}else AllesUit();
 			break;
-		case 3:
+			
+		case 3: // test mode: blue while modechange is prevented.
 			if(Juggle) setpoints[2]=SETPOINT; else AllesUit(); // remain blue for .. ticks after freefall	
 			break;	
+	
+			
+		// TODO: a case that keeps changing colour while juggle is true. (juggleball misbehaved as such while testing colorchange on catch and it kind of seems like a nice idea too)	
+			
 		default:
 			mode = 0;
 			break;
