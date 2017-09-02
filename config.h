@@ -37,5 +37,7 @@ const int colorset_percentage[LEN_COLOR] = //r,g,b
 //Because I want to change color differently on tap and freefall, I'll offset one of them a bit but use the same colorset.
 //If that does not work out, I make a 2nd colourset. Could even pick a random color from set on both events, instead of moving in a predetermined patern?
 
+
+// TODO: more colours, maybe figure out how not to use RAM, then again, plenty of ram and cpu time avaialable...
 #endif
 

@@ -4,16 +4,16 @@ NOTES, IDEAS, CURRENT STATE, TITLE, LICENSE, ETC. SHOULD GO HERE.
 Use tap, freefal, activity and inactivity interrupts from ADXL345.
 Inactivity: Fade trough rainbow colours a few times (say, 10s) then go to sleep.
 Activity: Wake up / Folow "juggle" protocol
-Tap: Part of juggle protocol: Change colour (Jump through a set of predefined pretty coulours)
+tap: Part of juggle protocol: Change colour on catch (Jump through a set of predefined pretty coulours)
 Freefall: change colour.
 That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
 
 Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
 (Or change mode on {double? tripple?} tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
 
-Other idea: Maybe not use tap to detect catch, but detect end-of-freefall? (TODO: test if end of freefal is more accurate as catch detection)
+Other idea: Maybe not use tap to detect catch, but detect end-of-freefall? (Yep, that works a lot better)
 
-TODO: Smooth modeswitching needs more work; code is getting messy so clean up; 
+TODO: code is getting messy so clean up; 
 
 */
 #include <stdbool.h>
@@ -120,7 +120,7 @@ than 0x30 (3 g).
 "
 */
 
-// TODO: Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
+// Determine treshhold values in actual application (Maybe even at runtime? Meh, no. just calibrate them once. Manually)
  i2c_write_byte(ADXL345_THRESH_TAP, 0x2D); // 62.5mg per increment
  i2c_write_byte(ADXL345_DUR, 0x10);	  // 625us per increment	
  i2c_write_byte(ADXL345_LATENT, 0x80);      
@@ -179,7 +179,7 @@ void goto_sleep(){
 	EXTI_RTSR |= (BIT5); // For rising ende
  	
  	//Set output pins to whatever makes them Low Power 
-	 TIM3_CCR1 = 0; // set timer outputs 0 TODO:FET/coil smoked on sleep entry. Why does fet stay on?
+	 TIM3_CCR1 = 0; // set timer outputs 0
          TIM3_CCR2 = 0;
          TIM14_CCR1 = 0;
          
@@ -375,7 +375,6 @@ int main() // TODO: Lots of cleanup!
 		// then 945000 should do the trick for 15s, but it is still faster... Investigate further!
 
 		// switch mode triple tap 
-		// TODO: feedback when tap is detected?
 		if((intjes&BIT6)&&(!Juggle)){ // on tap but not while juggling
  			prevtaptick=tick;
  			tap++;
@@ -503,7 +502,8 @@ void ADC_Handler(){
                 adcresult=ADC_DR; // read adc result for debugger/global use.
                 
                 pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.  
-                // This gets out of sync sometimes. (Feedback from one ch controlling another. Not good.)
+                // This gets out of sync sometimes, why? TODO
+                // (Feedback from one ch controlling another. Not good.)
                 // Especially debugging throws it out of sync but sometimes after reset it is another ch as well.
             	// (Another ADC interrupt before ch is incremented, OK, for debug I understand how that can happen, but why it hapens after reset?)
                 
