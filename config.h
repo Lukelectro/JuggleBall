@@ -6,10 +6,18 @@
 //(2^12/3v3 * 1.8*5/11.8) = 947 --- 5V uit, 3v3 ref. 12 bit adc 10k/1k8 div.
 //(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
 //(2^12/3v3 * 0.02 * 15)= 372 -- 20mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor.
+
+/*
 #define SETPOINT1 372 
 #define SETPOINT2 372 
 #define SETPOINT3 372 
 #define SETPOINT 372
+*/
+
+#define SETPOINT1 930 
+#define SETPOINT2 930 
+#define SETPOINT3 930 
+#define SETPOINT 930
 
 //TODO: a few (const) structs or array or something predefining "pretty" LED coulours.
 // maybe it's a good idea to scale this to max setpoint.
@@ -20,7 +28,7 @@
 const int colorset_percentage[LEN_COLOR] = //r,g,b
 {
  100,0,0,    //red
- 100,30,100, //white-ish bluegreen
+ 100,30,100, //white-ish purple
  100,0,30,   //magenta/pink purple
  100,60,0,   //yellow
  0,0,100,     //blue
