@@ -7,18 +7,16 @@
 //(2^12/3v3 * 0.05 * 15)= 930 -- 50mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor. (60mA is AMR for the LED's I use)
 //(2^12/3v3 * 0.02 * 15)= 372 -- 20mA max uit, 3v3 ref, 12Bit adc, 15R sense resistor.
 
-/*
 #define SETPOINT1 372 
 #define SETPOINT2 372 
 #define SETPOINT3 372 
 #define SETPOINT 372
-*/
-
+/*
 #define SETPOINT1 930 
 #define SETPOINT2 930 
 #define SETPOINT3 930 
 #define SETPOINT 930
-
+*/
 //TODO: a few (const) structs or array or something predefining "pretty" LED coulours.
 // maybe it's a good idea to scale this to max setpoint.
 // certainly it's a bad idea to hardcode values
