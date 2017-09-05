@@ -4,17 +4,14 @@ NOTES, IDEAS, CURRENT STATE, TITLE, LICENSE, ETC. SHOULD GO HERE.
 Use tap, freefal, activity and inactivity interrupts from ADXL345.
 Inactivity: Fade trough rainbow colours a few times (say, 10s) then go to sleep.
 Activity: Wake up / Folow "juggle" protocol
-tap: Part of juggle protocol: Change colour on catch (Jump through a set of predefined pretty coulours)
-Freefall: change colour.
-That should make for a nice lightshow when juggling: ball changing colour at catch and in fall.
+tap: change mode on tripple tap
+Freefall: Detect catch as end of freefall
 
-Idea: maybe change mode on doubletap, with mode one: change colour on tap, mode 2: change on tap and fall, mode 3: raw acellerodata to LED's?
-(Or change mode on {double? tripple?} tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
+juggle protocol: Change colour on catch (Jump through a set of predefined pretty coulours) and maybe a few other modes
 
-Other idea: Maybe not use tap to detect catch, but detect end-of-freefall? (Yep, that works a lot better)
+(change mode on (tripple) tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
  
 Maybe TODO: Change color at higest point or start of freefal? Flash at catch?
-
 TODO: code is getting messy so clean up;
 
 */
@@ -22,18 +19,12 @@ TODO: code is getting messy so clean up;
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example).
 #include "adxl345.h" // for the register names
 #include "config.h"  // to config max current / array of "pretty colors" etc.
-//#include "uart.h"
 #include "adxl_i2c.h"
 
 
 volatile int adcresult; // can be read in debugger too.
-int setpoints[3]={SETPOINT1,SETPOINT2,SETPOINT3};
+int setpoints[3]={0,0,0};
 unsigned int tick=0; // Gets ++t in adc handler and used for timeouts
-
-
-
-//Because I want to change color differently on tap and freefall, I'll offset one of them a bit but use the same colorset.
-//If that does not work out, I make a 2nd colourset. Could even pick a random color from set on both events, instead of moving in a predetermined patern?
 
 void delay(int dly)
 {
@@ -44,6 +35,7 @@ void initClock()
 {
 // This is potentially a dangerous function as it could
 // result in a system with an invalid clock signal - result: a stuck system
+
         // Set the PLL up
         // First ensure PLL is disabled
         RCC_CR &= ~BIT24;
@@ -60,7 +52,7 @@ void initClock()
         RCC_CFGR |= (BIT21 | BIT19 );
 
         // Need to limit ADC clock to below 14MHz so will change ADC prescaler to 4
-      ADC_CFGR2|=(BIT31); // Clock ADC with PCLOCK/4 =48Mhz/4=12Mhz =OK :)
+        ADC_CFGR2|=(BIT31); // Clock ADC with PCLOCK/4 =48Mhz/4=12Mhz =OK :)
 
 
         // and turn the PLL back on again
@@ -150,10 +142,10 @@ void goto_sleep(){
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
 
 
-         // then stop timer? No, deepsleep should stop all clocks, does the same.
+    // then stop timer? No, deepsleep should stop all clocks, does the same.
 	DBGMCU_CR = 0x00; //  Disable debug in STOP mode
 
-	// Disable pheripherals / power them down.
+	// Disable pheripherals / power them down. / TODO: Make as low power as possible. See datasheet and Appnotes.
 
 	//Power down ADC -- Is slightly more complicated then clearing aden:
 	if(ADC_CR&BIT2){// if adstart (If there is a ongoing conversion)
@@ -173,26 +165,23 @@ void goto_sleep(){
 
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
 	GPIOA_PUPDR|=(BIT11); // enable pulldown op PA5.
-        ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
-        IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
-        //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+    ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
+    IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
+    //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
 	// Enable exti interupt on PA5:
 	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
-	EXTI_RTSR |= (BIT5); // For rising ende
+	EXTI_RTSR |= (BIT5); // For rising edge
 
  	//Set output pins to whatever makes them Low Power
-	 TIM3_CCR1 = 0; // set timer outputs 0
-         TIM3_CCR2 = 0;
-         TIM14_CCR1 = 0;
+	TIM3_CCR1 = 0; // set timer outputs 0
+    TIM3_CCR2 = 0;
+    TIM14_CCR1 = 0;
 
+    //force output pins of timer to 0 (TIMx_CCMRx)
+    TIM14_CCMR1 &= ~(BIT5); // it was once set to PWM mode 1, with OC1M to 110. Those are 6downto4. By clearing bit 5 its set to force low.
+    TIM3_CCMR1 &= ~(BIT5|BIT13); // switch TIM3 outputs to inactive in the same way (2 ch, so OCM1 and OCM2)
 
-         //TODO: force output pins of timer to 0 (TIMx_CCMRx)
-         TIM14_CCMR1 &= ~(BIT5); // it was once set to PWM mode 1, with OC1M to 110. Those are 6downto4. By clearing bit 5 its set to force low.
-         			// maybe should build in a little data hiding here
-         TIM3_CCMR1 &= ~(BIT5|BIT13); // switch TIM3 outputs to inactive in the same way (2 ch, so OCM1 and OCM2)
-
-
-         GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
+    GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
 
 
 	// set MCU to sleep (STOP mode)
@@ -211,7 +200,6 @@ void goto_sleep(){
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts
-	//InitUart();
 
 	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
  	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
@@ -257,7 +245,7 @@ void rainbow(){
 }
 
 
-int main() // TODO: Lots of cleanup!
+int main()
 {
 	initClock();
 
@@ -277,43 +265,35 @@ int main() // TODO: Lots of cleanup!
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 
 	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
-        ADC_CR |= (BIT31); // set adcal
+    ADC_CR |= (BIT31); // set adcal
 
 	//set up timer 3 for PWM
 	TIM3_PSC = 0; // prescaler. (48Mhz/psc+1=tim3clock)
-        TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
-        //TIM3_CCR1 = 2048; // Compare register 1, dutycycle on output 1 (It has 4)
-        TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6 | BIT11 | BIT14 | BIT13) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5), OC2PE (bit11) preload enable, PWM mode for ch2 (BIT 14,13)
-        TIM3_CCER |= (BIT0 | BIT4) ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output on ch1, bit4 for ch2.
-        TIM3_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
-        TIM3_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
-        TIM3_CR1 |= BIT0 ; // start after updating registers!
+    TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
+    
+    TIM3_CCMR1 |= (BIT3 | BIT5 | BIT6 | BIT11 | BIT14 | BIT13) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5), OC2PE (bit11) preload enable, PWM mode for ch2 (BIT 14,13)
+    TIM3_CCER |= (BIT0 | BIT4) ; // CC1P to set polarity of output (0=active high), CC1E (bit 0) to enable output on ch1, bit4 for ch2.
+    TIM3_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
+    TIM3_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
+    TIM3_CR1 |= BIT0 ; // start after updating registers!
 
         // Set AF(AF1) en MODER to select PWM output on pins
 	GPIOA_AFRL |= (BIT24 |BIT28 | BIT18); ; // Bit27:24 for AFR6 / PA6, that should get set to AF1 (0001) for TIM3CH1, BIT28 is idem for PA7/TIM3ch2. And bit 18 for  AF4 on PA4: TIM14CH1 (PWM)
 	GPIOA_AFRH |= (BIT6 | BIT10); // AF4 for PA9 and PA10 (I2C SCL resp SDA)
 
-        //set up timer 14 for PWM
-        TIM14_PSC = 0; // prescaler. (48Mhz/psc+1=tim14clock)
-        TIM14_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM14_PSC+1)*TIM14_ARR)
-        TIM14_CCMR1 |= (BIT3 | BIT5 | BIT6 ) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5) preload enable.
-        TIM14_CCER |= (BIT0) ; //  CC1E (bit 0) to enable output on ch1.
-        TIM14_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
-        TIM14_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
-        TIM14_CR1 |= BIT0 ; // start after updating registers!
+    //set up timer 14 for PWM
+    TIM14_PSC = 0; // prescaler. (48Mhz/psc+1=tim14clock)
+    TIM14_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM14_PSC+1)*TIM14_ARR)
+    TIM14_CCMR1 |= (BIT3 | BIT5 | BIT6 ) ;      // PWM mode (per output bit 4:6). Set OC1PE (bit5) preload enable.
+    TIM14_CCER |= (BIT0) ; //  CC1E (bit 0) to enable output on ch1.
+    TIM14_CR1 |= BIT7 ;        // Control register. Set ARPE (bit7). And CEN I suppose (Counter enable, bit 0)
+    TIM14_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
+    TIM14_CR1 |= BIT0 ; // start after updating registers!
 
-
-
-        // Wait for ADCAL to be zero again:
-        while (ADC_CR & (BIT31));
-        // then power up and set up adc:
-        setup_adc();
-
-	int dummy; // XXX
-
-	setpoints[0] = 0;
-	setpoints[1] = 0;
-	setpoints[2] = SETPOINT/2;
+    // Wait for ADCAL to be zero again:
+		while (ADC_CR & (BIT31));
+    // then power up and set up adc:
+    setup_adc();
 
 	//setup array of nice collors
 	int colors[LEN_COLOR];
@@ -322,13 +302,8 @@ int main() // TODO: Lots of cleanup!
 	}
 
 	adxl_init(); // power up and setup adxl345
-	delay(900000);
-	setpoints[1] = SETPOINT/2; // to see how much time
-	setpoints[2]=0;
 
-	blink(4);
-
-	//InitUart();
+	blink(8);
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
@@ -336,8 +311,6 @@ int main() // TODO: Lots of cleanup!
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
 		enum mode{Direct=0, ChangeOnTap, freefall, TimeSinceLastFall};
-
-		//UartSendByte(0x5A); // just as a test;
 
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
@@ -395,12 +368,11 @@ int main() // TODO: Lots of cleanup!
 			blink(mode);
 		}
 
-		// TODO: and enmum for clarity
+		// TODO: add enmum for clarity
 
 		switch(mode){
 		case 0: // colour change based on orientation to gravity / test mode
 
-			// TODO: only read when new data is available
 			i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go
 			x=buffer[0]|(buffer[1]<<8);
 			y=buffer[2]|(buffer[3]<<8);
@@ -447,7 +419,7 @@ int main() // TODO: Lots of cleanup!
 		/*
 		// hmmz, lets test catch detection in a simpler way first:
 			if(Catch){
-				setpoints[1]=SETPOINT1;
+				setpoints[1]=SETPOINT;
 				Catch=false;
 				}
 				else AllesUit();
@@ -540,7 +512,7 @@ void ADC_Handler(){
 }
 
 void EXTI_Handler(void){
-// empty for now, could do wake up stuff here later TODO
+// empty for now, could do wake up stuff here later
 EXTI_PR |=(BIT5); // clear the flag.
 }
 
