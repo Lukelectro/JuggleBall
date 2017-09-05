@@ -322,14 +322,14 @@ int main()
 
 
 
-		// tick updates at 50104.384Hz ticks per second (approx. 50kHz)
+		// tick updates at approx. 151kHz (Why not 50.1Khz?)
 		if(intjes&BIT2){ // detect freefall to keep time since last freefal to prevent modeswitch during juggle
 			prevfftick=tick;
 			Juggle = true;
 			Flying=true;
 		}else{
 
-			if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 15 seconds ago (TODO: Seems shorter! Investigate!)
+			if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 10 seconds ago (945000/151000 = 6.25 s. But in practice, it's about 9 or 10)
 			Juggle = false;
 			}
 
@@ -346,7 +346,7 @@ int main()
 
 
 		// TODO: 752000 is shorter then 15s. So tick is apearently faster. Investigate!
-		// tick =adc interrupt. triggers eoc and eosq. eoc at 50104.384HZ, eosqc "once every 3 eocs" = + 25%; tick runs at 62.6Khz?
+		// tick =adc interrupt. triggers eoc and eosq. eoc at 50104.384HZ (No... 151 kHz measured...), eosqc "once every 3 eocs" = + 25%; tick runs at 62.6Khz?
 		// then 945000 should do the trick for 15s, but it is still faster... Investigate further!
 
 		// switch mode triple tap
@@ -355,10 +355,9 @@ int main()
  			tap++;
 		}
 
-		// tick updates at 50104.384Hz ticks per second (approx. 50kHz) (TODO: Investigate if/why faster)
 		if( tick > (unsigned int)(prevtaptick+100000) ){
 		// if( (tick-prevtick)> 100000 ), "modulo max_int" to handle overflows
-		// 100000 is about 2 seconds to tripple-tap. (Based on 50Khz tick while 63Khz might be closer)
+		// 100000 is about 2 seconds to tripple-tap. (Based on 50Khz tick while 63Khz (Or 151 kHz) might be closer)
 			tap=0;
 		}
 		else if(tap>2){ // TRIPLE tap. 3 and up > 2 :)
@@ -508,7 +507,11 @@ void ADC_Handler(){
         }
 
         //GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
-
+		// results: About 3.something (Varies) us, repeating at 151 kHz. TODO: Sample rate is set to 50.1Khz and interrupt triggers at 151Khz, why?
+		// hypotheses: 
+		//*Some of those interrupts are adcready? 
+		//*Sample rate per ch instead of for all 3 of them? (So 50.1 per ch instead of 50.1/num_ch, and 50.1*Num_ch for ADC instead of 50.1)?
+		//*Something different I'm going to learn about someday?
 }
 
 void EXTI_Handler(void){
