@@ -5,3 +5,4 @@ Currently: Getting current consumption of MPU-6050 down in a sleep mode where it
 (Switched to ADXL345)
 
 Voordat je de boel op github zet, even nalopen, en deze readme en andere eigen notities eruit gooien, zorgen dat licenties (GPL en cc-by-ca etc.) kloppen en er naar werk van anderen verwezen wordt waar nodig etc.
+(Of niet...)
