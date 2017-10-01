@@ -30,7 +30,15 @@ void delay(int dly)
 {
   while( dly--);
 }
+void setup_pins(){ // so this is the same in init and in return from sleep 
+	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1)
 
+	// Set unused pins to a defined state so floating inputs do not consume power
+	GPIOF_MODER |= BIT0|BIT1|BIT2|BIT3; // PF0 and PF1 to Analog Input
+	GPIOB_MODER |= BIT2|BIT3; //PB1 to AIN
+
+	}
+	
 void initClock()
 {
 // This is potentially a dangerous function as it could
@@ -122,7 +130,7 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_THRESH_INACT, 20);
  i2c_write_byte(ADXL345_THRESH_ACT, 20);
 
- i2c_write_byte(ADXL345_TIME_INACT, 30); // seconds (30)
+ i2c_write_byte(ADXL345_TIME_INACT, 5); // seconds (30, 5 for test)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -134,7 +142,10 @@ than 0x30 (3 g).
 }
 
 void goto_sleep(){
-	//i2c_write_byte(ADXL345_POWER_CTL,0x00); // Put ADXL in standbye (TODO: Maybe sleep? If it can still wake the MCU then?)
+	// Put ADXL in sleep, in sleep it samples at a lower rate, in standbye it wouldn't measure anything and thus can't wake the CPU
+	// (this barely saves any power, so TODO figure out what consumes (parts of) that 0.2mA)
+	i2c_write_byte(ADXL345_POWER_CTL,0x0A); 
+
  	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
  	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
 
@@ -164,7 +175,7 @@ void goto_sleep(){
 
 
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
-	GPIOA_PUPDR|=(BIT11); // enable pulldown op PA5.
+	//GPIOA_PUPDR|=(BIT11); //XXX testing withouth enable pulldown op PA5. as int output of ADXL is push-pull anyway.
     ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
     IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
     //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
@@ -183,6 +194,11 @@ void goto_sleep(){
 
     GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
 
+	// In fact, let's just set all pins to analog input (No power consumption) and set them to what they're suposed to be later.
+	// (TODO: remove other pin setings above that get overwritten by this anyway)
+	GPIOA_MODER = 0xFFFFF3FF; // except GPIOA5, because that's INTerupt input
+	GPIOB_MODER = 0xFFFFFFFF;
+	GPIOF_MODER = 0xFFFFFFFF;
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
@@ -193,6 +209,10 @@ void goto_sleep(){
 	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
 
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again.
+
+	// set pins same as in setup
+	GPIOA_MODER = 0x28000000; // reset value.
+	setup_pins();
 
 	TIM14_CCMR1 |= (BIT5); // set TIM14 back to PWM mode
 	TIM3_CCMR1 |= (BIT5|BIT13); // idem for TM3
@@ -244,7 +264,6 @@ void rainbow(){
 	}
 }
 
-
 int main()
 {
 	initClock();
@@ -252,12 +271,8 @@ int main()
 	// enable clock to Porta
 	RCC_AHBENR |= BIT17;
 
-	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1)
-
-	// Set unused pins to a defined state so floating inputs do not consume power
-	GPIOF_MODER |= BIT0|BIT1|BIT2|BIT3; // PF0 and PF1 to Analog Input
-	GPIOB_MODER |= BIT2|BIT3; //PB1 to AIN
-
+	setup_pins();
+	
 	//Set up I2C:
 	GPIOA_OSPEEDR |= 0x0FC00000; // High speed IO for I2C (?)
 	I2C1_TIMINGR = 0x50330309; //0x50330309; //calculated from tables in datasheet.
