@@ -36,7 +36,12 @@ void setup_pins(){ // so this is the same in init and in return from sleep
 	// Set unused pins to a defined state so floating inputs do not consume power
 	GPIOF_MODER |= BIT0|BIT1|BIT2|BIT3; // PF0 and PF1 to Analog Input
 	GPIOB_MODER |= BIT2|BIT3; //PB1 to AIN
-
+	
+		//allright, just because the TSSOP20 package does not have those pins doesn't mean I should ignore them... lets try if this affects power consumption:
+	GPIOC_MODER = 0xFFFFFFFF;
+	//GPIOD_MODER = 0xFFFFFFFF; // allright, this crashes/freezes the MCU... Why? TODO
+	//GPIOD_MODER = 0x00000000; // hmzz, this too, while it should be the default value...
+	//int dummy = GPIOD_MODER; // even this?!? (It causes a Hard Fault). 
 	}
 	
 void initClock()
@@ -168,7 +173,7 @@ void goto_sleep(){
 
 	while(I2C1_ISR&BIT15); // wait until I2C is no longer busy.
 	I2C1_CR1 &=~ BIT0; // disable I2C1 module
-	// Removing clock from things won't save power, as all clocks STOP in STOP mode.
+	// Removing clock from things won't save power, as all clocks STOP in STOP mode. (TODO: figure out whehther this clock switch is actually needed)
 	// But turning the PLL off might help. However, then I need another system clock first:
 	RCC_CFGR &= ~(BIT1|BIT0); // HSI as system clock again
         RCC_CR &= ~BIT24; // disable PLL
@@ -199,6 +204,11 @@ void goto_sleep(){
 	GPIOA_MODER = 0xFFFFF3FF; // except GPIOA5, because that's INTerupt input
 	GPIOB_MODER = 0xFFFFFFFF;
 	GPIOF_MODER = 0xFFFFFFFF;
+	
+	
+	TIM3_CR1 &=~ (BIT0); // disable timer3
+	TIM14_CR1 &=~ (BIT0);// disable timer14 (TODO: This seems not to effect power consumption anyway, since clock is stopped)
+	
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
@@ -220,6 +230,8 @@ void goto_sleep(){
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts
+	TIM3_CR1 |= (BIT0); // re-enable timer3
+	TIM14_CR1 |= (BIT0);// re-enable timer14
 
 	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
  	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
@@ -319,6 +331,10 @@ int main()
 	adxl_init(); // power up and setup adxl345
 
 	blink(8);
+
+	//XXX
+	goto_sleep(); // TODO:remove this, was just for testing sleep mode.
+	//XXX
 
 	while(1){
 		int x,y,z, intjes, buffer[6];

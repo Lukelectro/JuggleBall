@@ -1,8 +1,13 @@
 void init(void);
 void Default_Handler(void);
+
+void NMI(void); //added to ease debug
+void HardFault(void); // added to ease debug
+
 extern void ADC_Handler(void); //added
 extern void EXTI_Handler(void); //added
 extern int main(void);         //added
+
 
 // The following are 'declared' in the linker script
 extern unsigned char  INIT_DATA_VALUES;
@@ -15,8 +20,8 @@ extern unsigned char  BSS_END;
 const void * Vectors[] __attribute__((section(".vectors"))) ={
 	(void *)0x20001000, 	/* Top of stack (4k) */ 
 	init,   		/* Reset Handler */
-	Default_Handler,	/* NMI */
-	Default_Handler,	/* Hard Fault */
+	NMI,	/* NMI */
+	HardFault,	/* Hard Fault */
 	Default_Handler,	/* MemManage */
 	Default_Handler,	/* Reserved  */
 	Default_Handler,	/* Reserved */
@@ -83,3 +88,12 @@ void Default_Handler()
 {
 	while(1);
 }
+void NMI()
+{
+	while(1);
+}
+void HardFault()
+{
+	while(1);
+}
+
