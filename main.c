@@ -146,6 +146,66 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_INT_MAP,0x10); // Only activity to INT2 pin
 }
 
+void simplesleeptest() { // to test withouth adxl (on breadboard)
+	// Disable interrupts
+	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
+
+	// Disable pheripherals / power them down. / TODO: Make as low power as possible. See datasheet and Appnotes.
+
+	//Power down ADC -- Is slightly more complicated then clearing aden:
+	if(ADC_CR&BIT2){// if adstart (If there is a ongoing conversion)
+		ADC_CR|=BIT4;	// stop it by writing adstp
+		while(ADC_CR&BIT4);	// wait till adc stopped
+		}
+	ADC_CR|=BIT1;	// then write addis to disable adc
+	while(ADC_CR&BIT0);	// wait until aden = 0 to indicate adc is disabled
+
+  // XXX removed I2C busy check
+	I2C1_CR1 &=~ BIT0; // disable I2C1 module
+
+    //XXX removed clock switching
+
+	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
+	GPIOA_PUPDR|=(BIT11); //pulldown for testing without adxl
+    ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
+    IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
+    //Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
+	// Enable exti interupt on PA5:
+	EXTI_IMR |= (BIT5); // and enable it in EXTI_IMR
+	EXTI_RTSR |= (BIT5); // For rising edge
+
+    GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
+    
+    DBGMCU_CR = 0x00; //  Disable debug in STOP mode
+
+	// In fact, let's just set all pins to analog input (No power consumption) and set them to what they're suposed to be later.
+	// (TODO: remove other pin setings above that get overwritten by this anyway)
+	GPIOA_MODER = 0xFFFFF3FF; // except GPIOA5, because that's INTerupt input
+	GPIOB_MODER = 0xFFFFFFFF;
+	GPIOF_MODER = 0xFFFFFFFF;
+			
+
+	// set MCU to sleep (STOP mode)
+	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
+	PWR_CR &= ~(BIT1); //Clear PDDS pwr_cr (Low power regulator)
+	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
+	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
+
+	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
+
+	initClock(); // NB: after wakeup it runs from HSI, so initClock() again.
+
+	// set pins same as in setup
+	GPIOA_MODER = 0x28000000; // reset value.
+	setup_pins();
+
+	// Re-enable pheripherals:
+	I2C1_CR1 |= BIT0; // enable I2C1 module
+	setup_adc(); // re enable / re setup adc, and its interrupts
+
+	
+	}
+
 void goto_sleep(){
 	// Put ADXL in sleep, in sleep it samples at a lower rate, in standbye it wouldn't measure anything and thus can't wake the CPU
 	// (this barely saves any power, so TODO figure out what consumes (parts of) that 0.2mA)
@@ -328,13 +388,15 @@ int main()
 	colors[i]=colorset_percentage[i]*SETPOINT/100;
 	}
 
+    blink(4);
+
+	//XXX
+	simplesleeptest(); // TODO:remove this, was just for testing sleep mode.
+	//XXX
+
 	adxl_init(); // power up and setup adxl345
 
-	blink(8);
-
-	//XXX
-	goto_sleep(); // TODO:remove this, was just for testing sleep mode.
-	//XXX
+	blink(4);
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
