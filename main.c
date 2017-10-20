@@ -146,6 +146,25 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_INT_MAP,0x10); // Only activity to INT2 pin
 }
 
+void simplestandbyetest() { // to test withouth adxl (on breadboard), standbye mode
+	
+	// no need to set up all sorts of registers, it will forget their contents anyway		
+
+	// set MCU to sleep (STANDBYE mode)
+	
+	PWR_CR |= (BIT2); // clear Wake Up Flag (Takes 2 clock cycles!)
+	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register (see PM0215)
+	PWR_CR |= (BIT1); //STANDBYE mode (Lower power then stop)
+	__asm("NOP"); // make sure about those 2 cycles... 
+	__asm("NOP");
+	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
+
+	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
+
+	// on wkup, it will reset. (Except I have not set up wakeup pins, so it won't wakeup unless reset by reset pin, which is fine for test) TODO
+	
+	}
+
 void simplesleeptest() { // to test withouth adxl (on breadboard)
 	// Disable interrupts
 	ADC_IER &=~(BIT2|BIT3) ; //disable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
@@ -187,7 +206,7 @@ void simplesleeptest() { // to test withouth adxl (on breadboard)
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
-	PWR_CR &= ~(BIT1); //Clear PDDS pwr_cr (Low power regulator)
+	PWR_CR &= ~(BIT1); //Select stop mode
 	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 
@@ -272,7 +291,7 @@ void goto_sleep(){
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
-	PWR_CR &= ~(BIT1); //Clear PDDS pwr_cr (Low power regulator)
+	PWR_CR &= ~(BIT1); //stop mode
 	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 
@@ -338,6 +357,9 @@ void rainbow(){
 
 int main()
 {
+	
+	simplestandbyetest(); // XXX TODO testing standbye mode.
+	
 	initClock();
 
 	// enable clock to Porta
