@@ -7,7 +7,10 @@
 # This guys system:
 #LIBSPEC=-L /usr/local/gcc-arm-none-eabi/lib/gcc/arm-none-eabi/4.8.3/armv6-m
 #My (Luke's) system
-LIBSPEC=-L /usr/lib/gcc/arm-none-eabi/4.8/armv6-m
+#LIBSPEC=-L /usr/lib/gcc/arm-none-eabi/4.8/armv6-m
+#My new system:
+LIBSPEC=-L /usr/lib/gcc/arm-none-eabi/5.4.1/armv6-m/
+
 
 # Specify the compiler to use
 CC=arm-none-eabi-gcc

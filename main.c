@@ -358,7 +358,9 @@ void rainbow(){
 int main()
 {
 	
-	simplestandbyetest(); // XXX TODO testing standbye mode.
+	// simplestandbyetest(); // XXX TODO testing standbye mode. (Still 200uA... Weird HW issue?)
+	// Oh, and problem: If it goes stanbye here, it never wakes up. Cannot reprogram or erase 
+	// (Unless BOOT0 set to boot from bootloader ROM, but it is hardwired to GND on board...)
 	
 	initClock();
 
