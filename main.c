@@ -146,6 +146,7 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_INT_MAP,0x10); // Only activity to INT2 pin
 }
 
+
 void simplestandbyetest() { // to test withouth adxl (on breadboard), standbye mode
 	
 	// no need to set up all sorts of registers, it will forget their contents anyway		
@@ -164,6 +165,7 @@ void simplestandbyetest() { // to test withouth adxl (on breadboard), standbye m
 	// on wkup, it will reset. (Except I have not set up wakeup pins, so it won't wakeup unless reset by reset pin, which is fine for test) TODO
 	
 	}
+
 
 void simplesleeptest() { // to test withouth adxl (on breadboard)
 	// Disable interrupts
@@ -206,7 +208,7 @@ void simplesleeptest() { // to test withouth adxl (on breadboard)
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
-	PWR_CR &= ~(BIT1); //Select stop mode
+	PWR_CR &= ~(BIT1); //Clear PDDS pwr_cr (Low power regulator)
 	PWR_CR |= BIT0; //set LPDS in pwr_cr (Low power regulator)
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 
