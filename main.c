@@ -136,8 +136,9 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_DUR, 0x10);	  // 625us per increment
  i2c_write_byte(ADXL345_LATENT, 0x80);
 
- i2c_write_byte(ADXL345_THRESH_INACT, 20);
- i2c_write_byte(ADXL345_THRESH_ACT, 20);
+//TODO: tune these thressholds so it does not wake up  during transport but wakes easily when needed
+ i2c_write_byte(ADXL345_THRESH_INACT, 20); //was 20 
+ i2c_write_byte(ADXL345_THRESH_ACT, 20);   //was 20
 
  i2c_write_byte(ADXL345_TIME_INACT, 5); // seconds (30, 5 for test)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
@@ -157,8 +158,8 @@ void goto_sleep(){
 
 	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
  	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
-	i2c_write_byte(ADXL345_POWER_CTL,0x0A); // put ADXL to sleep at 8 Hz sample rate. (Should be a <30uA (23uA typ.), but measure 50-ish... So it wakes up itself...)
-
+	i2c_write_byte(ADXL345_POWER_CTL,0x0C); // put ADXL to sleep at 8 Hz sample rate. (Should be a <30uA (23uA typ.), but measure 50-ish... So it wakes up itself...)
+	// XXX 0x0A = 0b00001010 should be 0b00001100 = 0x0C
 
 	// Disable pheripherals / power them down.
 	//Power down ADC -- Is slightly more complicated then clearing aden:
