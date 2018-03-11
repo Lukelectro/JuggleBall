@@ -187,13 +187,14 @@ void goto_sleep(){
 
     	GPIOA_BSRR = (BIT0); // SET PA0 (LED off)
 
-	// In fact, let's just set all pins to analog input (No power consumption) and set them to what they're suposed to be later.
-	GPIOA_MODER = 0xFFFFF3FF; // except GPIOA5, because that's INTerupt input
+	GPIOA_BSRR = (BIT20 | BIT22 | BIT23) ; // RESET PA4,6,7 (Reset is Bitn+16)
+	// set pins to analog input (No power consumption in input buffer for floating inputs) or to output.
+	GPIOA_MODER = 0xFFFF51FF; // GPIOA5 = digital input (interupt); PA4,6,7 are PWM outputs; rest analog input
 	GPIOB_MODER = 0xFFFFFFFF;
 	GPIOF_MODER = 0xFFFFFFFF;
 
-	// TODO: Maybe set timer output to fet's as output driving ground (But since they have pulldowns, HighZ is fine too)
-	
+	// output to fet's (PA4,6,7) as output driving ground. Also place pulldown between gate and gnd in hw.
+	// without either of those, fet gate floating in sleep mode turns fet on, shorting battery through inductor, smoking inductor and/or fet.
 
 	// set MCU to sleep (STOP mode)
 	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register
