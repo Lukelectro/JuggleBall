@@ -43,9 +43,6 @@ void setup_pins(){ // so this is the same in init and in return from sleep
 	
 		//allright, just because the TSSOP20 package does not have those pins doesn't mean I should ignore them... lets try if this affects power consumption:
 	GPIOC_MODER = 0xFFFFFFFF;
-	//GPIOD_MODER = 0xFFFFFFFF; // allright, this crashes/freezes the MCU... Why? TODO
-	//GPIOD_MODER = 0x00000000; // hmzz, this too, while it should be the default value...
-	//int dummy = GPIOD_MODER; // even this?!? (It causes a Hard Fault). 
 	}
 	
 void initClock()
@@ -136,7 +133,7 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_DUR, 0x10);	  // 625us per increment
  i2c_write_byte(ADXL345_LATENT, 0x80);
 
-//TODO: tune these thressholds so it does not wake up  during transport but wakes easily when needed
+//TODO: tune these thressholds so it does not wake up during transport but wakes easily when juggling
  i2c_write_byte(ADXL345_THRESH_INACT, 20); //was 20 
  i2c_write_byte(ADXL345_THRESH_ACT, 20);   //was 20
 
@@ -158,8 +155,12 @@ void goto_sleep(){
 
 	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
  	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
-	i2c_write_byte(ADXL345_POWER_CTL,0x0C); // put ADXL to sleep at 8 Hz sample rate. (Should be a <30uA (23uA typ.), but measure 50-ish... So it wakes up itself...)
-	// XXX 0x0A = 0b00001010 should be 0b00001100 = 0x0C
+	i2c_write_byte(ADXL345_POWER_CTL,0x0C); // put ADXL to sleep at 8 Hz sample rate.
+	//i2c_write_byte(ADXL345_POWER_CTL,0x0D); // put ADXL to sleep at 4 Hz sample rate.
+	//i2c_write_byte(ADXL345_POWER_CTL,0x0E); // put ADXL to sleep at 2 Hz sample rate.
+	//i2c_write_byte(ADXL345_POWER_CTL,0x0F); // put ADXL to sleep at 1 Hz sample rate.
+	// lower sample rates do not save more power, so let's update at 8Hz.
+
 
 	// Disable pheripherals / power them down.
 	//Power down ADC -- Is slightly more complicated then clearing aden:
@@ -175,7 +176,6 @@ void goto_sleep(){
 
 
 	// Set uC to wakeup from EXTI (On pin 11/PA5) (So only that interrupt stays enabled for now!)
-	//GPIOA_PUPDR|=(BIT11); //XXX testing withouth enable pulldown op PA5. as int output of ADXL is push-pull anyway.
    	ISER |= (BIT7); // Enable IRQ7: enable EXTI4..15 interupt in NVIC
     	IPR1 |= (14<<24); // set priority for IRQ7 (4*IPRn+IRQn), starting from 0, so for IRQ7 that's IPR1 bits 31 downto 24
     	//Read the relevant part of PM0215. IRC number is the position listed in RM0360 table 11.1.3.
@@ -202,17 +202,13 @@ void goto_sleep(){
 	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
 
 	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
-	// 17 uA for MCU. 9 uA for Vreg. (26) Should get ADXL to 30-ish or below so 56 uA total. (Fet's etc. don't leak)
-	// however, measured total is 86-ish, so adxl is 50uA, so it is active and not sleeping... TODO
+	// 17 uA for MCU. 9 uA for Vreg, when ADXL powered down (0.1uA). But then it cannot wake the CPU, so with ADXL sleeping 68uA total (Of which 17uA MCU & 9 Vreg)
 
 	initClock(); // NB: after wakeup it runs from HSI, so initClock() again.
 
 	// set pins same as in setup
 	GPIOA_MODER = 0x28000000; // reset value.
 	setup_pins();
-
-//	TIM14_CCMR1 |= (BIT5); // set TIM14 back to PWM mode
-//	TIM3_CCMR1 |= (BIT5|BIT13); // idem for TM3
 
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
