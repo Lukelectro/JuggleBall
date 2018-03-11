@@ -151,24 +151,6 @@ than 0x30 (3 g).
 }
 
 
-void simplestandbyetest() { // to test withouth adxl (on breadboard), standbye mode
-	
-	// no need to set up all sorts of registers, it will forget their contents anyway		
-
-	// set MCU to sleep (STANDBYE mode)
-	
-	PWR_CR |= (BIT2); // clear Wake Up Flag (Takes 2 clock cycles!)
-	SCR |= (BIT2); //set sleepdeep (Bit2) in system control register (see PM0215)
-	PWR_CR |= (BIT1); //STANDBYE mode (Lower power then stop)
-	__asm("NOP"); // make sure about those 2 cycles... 
-	__asm("NOP");
-	__asm("WFI");// Wait For Interrupt (WFI) / go to sleep
-
-	/*SLEEPZZZzzzzzZZZZZZZZZZZzzzzzzzZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzzZZZZZZZZZZZzzzzzzzzzzzzzzZZZZZZZZZZZZZZZZZZZZZz*/
-
-	// on wkup, it will reset. (Except I have not set up wakeup pins, so it won't wakeup unless reset by reset pin, which is fine for test) TODO
-	
-	}
 
 
 void simplesleeptest() { // to test withouth adxl (on breadboard)
@@ -227,9 +209,9 @@ void simplesleeptest() { // to test withouth adxl (on breadboard)
 	// Re-enable pheripherals:
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 	setup_adc(); // re enable / re setup adc, and its interrupts
-
-	
 	}
+
+// TODO: split "Send MCU to sleep" and "Set ADXL to sleep" functions. Maybe use simplesleeptest for the MCU bit, because it works.
 
 void goto_sleep(){
 	// Put ADXL in sleep, in sleep it samples at a lower rate, in standbye it wouldn't measure anything and thus can't wake the CPU
@@ -414,10 +396,16 @@ int main()
     blink(4);
 
 	//XXX
-	simplesleeptest(); // TODO:remove this, was just for testing sleep mode.
+	//simplesleeptest(); // TODO:remove this, was just for testing sleep mode.
 	//XXX
 
 	adxl_init(); // power up and setup adxl345
+
+	blink(2);
+
+	//XXX remove this, is just for testing sleep mode (On real HW this time, so with ADXL)
+	goto_sleep();	
+	//XXX	
 
 	blink(4);
 
