@@ -31,6 +31,10 @@ void delay(int dly)
   while( dly--);
 }
 void setup_pins(){ // so this is the same in init and in return from sleep 
+	//enable clock to Porta (BIT17), B (18), F (22)
+	RCC_AHBENR |= BIT17 | BIT18 | BIT22;
+
+
 	GPIOA_MODER |= ( BIT0 | BIT9 | BIT13 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT15 | BIT19 | BIT21) ; // make PA0 an output (Pin6, BIT0), PA4 (pin10, BIT9) to AF (TIM14CH1), PA6/pin12 (Bit13) AF (timer), and PA1,2,3/pin7,8,9 analog (BIT2,3,bit4,5,Bit6 and 7, reps), PA7 AF (TIM3_CH2) Bit 15. PA9/10 AF4 (I2C1)
 
 	// Set unused pins to a defined state so floating inputs do not consume power
@@ -360,14 +364,7 @@ void rainbow(){
 int main()
 {
 	
-	// simplestandbyetest(); // XXX TODO testing standbye mode. (Still 200uA... Weird HW issue?)
-	// Oh, and problem: If it goes stanbye here, it never wakes up. Cannot reprogram or erase 
-	// (Unless BOOT0 set to boot from bootloader ROM, but it is hardwired to GND on board...)
-	
 	initClock();
-
-	// enable clock to Porta
-	RCC_AHBENR |= BIT17;
 
 	setup_pins();
 	
