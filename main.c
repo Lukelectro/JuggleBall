@@ -137,7 +137,7 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_THRESH_INACT, 20); //was 20 
  i2c_write_byte(ADXL345_THRESH_ACT, 20);   //was 20
 
- i2c_write_byte(ADXL345_TIME_INACT, 5); // seconds (30, 5 for test)
+ i2c_write_byte(ADXL345_TIME_INACT, 15); // seconds (30, 5 for test)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
