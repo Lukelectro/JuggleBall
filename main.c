@@ -83,6 +83,9 @@ void initClock()
 
 
 void setup_adc(){
+	//TODO: do ADC calibration here instead of hidden in main. That way it also gets recallibrated after waking up from standbye mode (It looses cal in standbye mode.)
+	// calibration has to be done with ADEN cleared / 0, so before enabling adc. Then wait untill adcal gets 0 again before enabling adc.
+
 	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
 
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
@@ -90,7 +93,7 @@ void setup_adc(){
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result -- TODO: think about this in light of that desync issue...
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
         ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, all three set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.)
@@ -322,10 +325,11 @@ int main()
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
-		static int cc=0 , mode = 0, tap;
+		static int cc=0, tap;
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
-		enum mode{Direct=0, ChangeOnTap, freefall, TimeSinceLastFall};
+		typedef enum modes{direct, catchchange, freefall, TimeSinceLastFall, colorwheel, anothercolorwheel};
+		enum modes mode;
 
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
@@ -382,10 +386,8 @@ int main()
 			blink(mode);
 		}
 
-		// TODO: add enmum for clarity
-
 		switch(mode){
-		case 0: // colour change based on orientation to gravity / test mode
+		case direct: // colour change based on orientation to gravity / test mode
 
 			i2c_read_n_bytes(0x32, 6, buffer); // read xyz in one go
 			x=buffer[0]|(buffer[1]<<8);
@@ -417,7 +419,7 @@ int main()
 
 			break;
 
-		case 1:
+		case catchchange:
 		// clourchange on catch / juggle modue, End-Of-FreeFall based
 			
 			setpoints[0]=colors[1+cc]; // set colors
@@ -453,7 +455,7 @@ int main()
 
 			break;
 
-		case 2: // red while freefalling / test mode
+		case freefall: // red while freefalling / test mode
 			if(intjes&BIT2){ // on freefall:
 			//TODO: Change colour to the next one from the 2nd predefined list for freefall (Uhm, nope as there are multiple interrupts per fall.)
 			// for now, be red
@@ -462,13 +464,13 @@ int main()
 			}else AllesUit();
 			break;
 
-		case 3: // test mode: blue while modechange is prevented.
+		case TimeSinceLastFall: // test mode: blue while modechange is prevented.
 			if(Juggle) setpoints[2]=SETPOINT; else AllesUit(); // remain blue for .. ticks after freefall
 			break;
 
 
 		// a case that keeps changing colour while juggle is true. (juggleball misbehaved as such while testing colorchange on catch and it kind of seems like a nice idea too)
-		case 4:
+		case colorwheel:
 			if(Juggle){ 
 					if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
 				setpoints[0]=colors[1+cc];
@@ -478,7 +480,7 @@ int main()
 			}
 			break;
 			
-		case 5:
+		case anothercolorwheel:
 			if(Juggle) rainbow();
 			break;
 
@@ -494,13 +496,13 @@ int main()
 
 void ADC_Handler(){
 	tick++;
-        //GPIOA_BSRR = (BIT0); // SET PA0 (To time handler)
+        GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (3.46us actief, 141.6 KHz)
 
         static int ch=0; // keep between invocations
         static int pwm[3];
 
-        if(ADC_ISR&(BIT2)) // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
-                {
+        if(ADC_ISR&(BIT2)){ // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
+               	//GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (144.1 kHz, 3,2us active ?!?)
                 adcresult=ADC_DR; // read adc result for debugger/global use.
 
                 pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.
@@ -517,11 +519,12 @@ void ADC_Handler(){
                 }
 
         if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync.
+	//GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (41 kHz, 220ns.)
         	ch=0;
         	ADC_ISR&=(BIT3); // reset flag
         }
 
-        //GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
+        GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
 		// results: About 3.something (Varies) us, repeating at 151 kHz. TODO: Sample rate is set to 50.1Khz and interrupt triggers at 151Khz, why?
 		// hypotheses: 
 		//*Some of those interrupts are adcready? 
