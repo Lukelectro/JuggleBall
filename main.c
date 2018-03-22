@@ -270,9 +270,6 @@ void rainbow(){
 int main()
 {
 	initClock();
-
-	blink (4);
-
 	setup_pins();
 	
 	//Set up I2C:
@@ -328,7 +325,7 @@ int main()
 		static int cc=0, tap;
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
-		enum modes{direct, catchchange, freefall, TimeSinceLastFall, colorwheel, anothercolorwheel} mode;
+		enum modes{direct, catchchange, freefall, colorwheel, anothercolorwheel} mode;
 
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
@@ -339,7 +336,6 @@ int main()
 		}// activity will wake it up, but that's hardware (INT2 Wired to EXTI_PA5)
 
 
-
 		// tick updates at approx. 55 kHz.
 		if(intjes&BIT2){ // detect freefall to keep time since last freefal to prevent modeswitch during juggle
 			prevfftick=tick;
@@ -347,11 +343,11 @@ int main()
 			Flying=true;
 		}else{
 
-			if( tick > (unsigned int)(prevfftick+550000) ){ // If a freefall is about 10 seconds ago (55Khz * 10s = 550000) (TODO: check if this now is correct)
+			if( tick > (unsigned int)(prevfftick+550000) ){ // If a freefall is about 10 seconds ago (55Khz * 10s = 550000)
 			Juggle = false;
 			}
 
-			if( tick > (unsigned int)(prevfftick+7000) ){ // If a freefall just ended, assume ball is catched
+			if( tick > (unsigned int)(prevfftick+10000) ){ // If a freefall just ended, assume ball is catched (TODO: test this timing)
 			//(increase wait time when falsely assumed, decrease when lagging too much)
 			// (Uses tick to prevent false catch detection while still falling)
 				if(Flying){ // Only detect catches when previously falling (flying). Otherwise lying still counts as a catch...
@@ -363,8 +359,6 @@ int main()
 		}
 
 
-		// TODO: see if tick-timing now is correct
-
 		// switch mode triple tap
 		if((intjes&BIT6)&&(!Juggle)){ // on tap but not while juggling
  			prevtaptick=tick;
@@ -373,7 +367,6 @@ int main()
 
 		if( tick > (unsigned int)(prevtaptick+50000) ){
 		// if( (tick-prevtick)> 100000 ), "modulo max_int" to handle overflows
-		// TODO: check if tripple tap still works now tick ticks at the correct (slower) rate
 			tap=0;
 		}
 		else if(tap>2){ // TRIPLE tap. 3 and up > 2 :)
@@ -429,27 +422,6 @@ int main()
 				Catch=false;
 			}
 
-		/*
-		// hmmz, lets test catch detection in a simpler way first:
-			if(Catch){
-				setpoints[1]=SETPOINT;
-				Catch=false;
-				}
-				else AllesUit();
-		*/
-
-	     /*
-		 // clourchange on catch / juggle modue, tap based, less accurate
-			if(intjes&BIT6){ // on tap:
-			//Change colour to the next one from the predefined list for tap
-				if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
-				setpoints[0]=colors[1+cc];
-				setpoints[1]=colors[0+cc];
-				setpoints[2]=colors[2+cc];
-			}
-
-		*/
-
 			break;
 
 		case freefall: // red while freefalling / test mode
@@ -460,11 +432,6 @@ int main()
 			delay(100000);
 			}else AllesUit();
 			break;
-
-		case TimeSinceLastFall: // test mode: blue while modechange is prevented.
-			if(Juggle) setpoints[2]=SETPOINT; else AllesUit(); // remain blue for .. ticks after freefall
-			break;
-
 
 		// a case that keeps changing colour while juggle is true. (juggleball misbehaved as such while testing colorchange on catch and it kind of seems like a nice idea too)
 		case colorwheel:
