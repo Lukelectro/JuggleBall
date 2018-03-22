@@ -238,13 +238,13 @@ void AllesUit(){
 
 void blink (int num){
  GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
- delay(200000);
+ delay(800000);
 
 while(num--){
  GPIOA_BSRR = (BIT16); // CLEAR PA0 (LED aan)
- delay(100000);
+ delay(400000);
   GPIOA_BSRR = (BIT0); // SET PA0 (led UIT)
- delay(200000);
+ delay(800000);
  }
 
 }
@@ -269,8 +269,9 @@ void rainbow(){
 
 int main()
 {
-	
 	initClock();
+
+	blink (4);
 
 	setup_pins();
 	
@@ -312,17 +313,15 @@ int main()
 	colors[i]=colorset_percentage[i]*SETPOINT/100;
 	}
 
-    blink(4);
+    blink(2);
 
 	adxl_init(); // power up and setup adxl345
 
 	blink(2);
 
 	//XXX remove this, is just for testing sleep mode (On real HW this time, so with ADXL)
-	goto_sleep();	
-	//XXX	
-
-	blink(4);
+	//goto_sleep();	
+	//XXX (on the other hand, sleep after poweron means those bright LED's don't blind me while closing the enclosure... But it interferes with debugging.)	
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
@@ -341,18 +340,18 @@ int main()
 
 
 
-		// tick updates at approx. 151kHz (Why not 50.1Khz?)
+		// tick updates at approx. 55 kHz.
 		if(intjes&BIT2){ // detect freefall to keep time since last freefal to prevent modeswitch during juggle
 			prevfftick=tick;
 			Juggle = true;
 			Flying=true;
 		}else{
 
-			if( tick > (unsigned int)(prevfftick+945000) ){ // If a freefall is about 10 seconds ago (945000/151000 = 6.25 s. But in practice, it's about 9 or 10)
+			if( tick > (unsigned int)(prevfftick+550000) ){ // If a freefall is about 10 seconds ago (55Khz * 10s = 550000) (TODO: check if this now is correct)
 			Juggle = false;
 			}
 
-			if( tick > (unsigned int)(prevfftick+20000) ){ // If a freefall just ended, assume ball is catched
+			if( tick > (unsigned int)(prevfftick+7000) ){ // If a freefall just ended, assume ball is catched
 			//(increase wait time when falsely assumed, decrease when lagging too much)
 			// (Uses tick to prevent false catch detection while still falling)
 				if(Flying){ // Only detect catches when previously falling (flying). Otherwise lying still counts as a catch...
@@ -364,9 +363,7 @@ int main()
 		}
 
 
-		// TODO: 752000 is shorter then 15s. So tick is apearently faster. Investigate!
-		// tick =adc interrupt. triggers eoc and eosq. eoc at 50104.384HZ (No... 151 kHz measured...), eosqc "once every 3 eocs" = + 25%; tick runs at 62.6Khz?
-		// then 945000 should do the trick for 15s, but it is still faster... Investigate further!
+		// TODO: see if tick-timing now is correct
 
 		// switch mode triple tap
 		if((intjes&BIT6)&&(!Juggle)){ // on tap but not while juggling
@@ -374,9 +371,9 @@ int main()
  			tap++;
 		}
 
-		if( tick > (unsigned int)(prevtaptick+100000) ){
+		if( tick > (unsigned int)(prevtaptick+50000) ){
 		// if( (tick-prevtick)> 100000 ), "modulo max_int" to handle overflows
-		// 100000 is about 2 seconds to tripple-tap. (Based on 50Khz tick while 63Khz (Or 151 kHz) might be closer)
+		// TODO: check if tripple tap still works now tick ticks at the correct (slower) rate
 			tap=0;
 		}
 		else if(tap>2){ // TRIPLE tap. 3 and up > 2 :)
@@ -496,13 +493,12 @@ int main()
 
 void ADC_Handler(){
 	tick++;
-        GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (3.46us actief, 141.6 KHz)
+        //GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (55.5KHz now. 3.4 / 3.6us active, 14 us not)
 
         static int ch=0; // keep between invocations
         static int pwm[3];
 
         if(ADC_ISR&(BIT2)){ // Check EOC (Could check EOSEQ when the sequence is only 1 conversion long)
-               	//GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (144.1 kHz, 3,2us active ?!?)
                 adcresult=ADC_DR; // read adc result for debugger/global use.
 
                 pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.
@@ -510,6 +506,7 @@ void ADC_Handler(){
                 // (Feedback from one ch controlling another. Not good.)
                 // Especially debugging throws it out of sync but sometimes after reset it is another ch as well.
             	// (Another ADC interrupt before ch is incremented, OK, for debug I understand how that can happen, but why it hapens after reset?)
+		// possibly overrun? (not reading result because stoppend in debug?)
 
                 if (pwm[ch]<0) pwm[ch]= 0; else if (pwm[ch]>1024) pwm[ch]=1024; //max 50% D.
                 TIM3_CCR1 = pwm[2];
@@ -518,18 +515,12 @@ void ADC_Handler(){
                 ch++;
                 }
 
-        if(ADC_ISR&(BIT3)){ // EOSEQ is used to resync.
-	//GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (41 kHz, 220ns.)
-        	ch=0;
+        if(ADC_ISR&(BIT3)){ // EOSEQ 
+        	ch=0; // resync; (Just in case, but turned out usefull)
         	ADC_ISR&=(BIT3); // reset flag
         }
 
-        GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate)
-		// results: About 3.something (Varies) us, repeating at 151 kHz. TODO: Sample rate is set to 50.1Khz and interrupt triggers at 151Khz, why?
-		// hypotheses: 
-		//*Some of those interrupts are adcready? 
-		//*Sample rate per ch instead of for all 3 of them? (So 50.1 per ch instead of 50.1/num_ch, and 50.1*Num_ch for ADC instead of 50.1)?
-		//*Something different I'm going to learn about someday?
+        //GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate) // TODO: might it be inverted? CLEAR=LED ON and SET=LED OFF?
 }
 
 void EXTI_Handler(void){
