@@ -55,14 +55,16 @@ void initClock()
         RCC_CR &= ~BIT24;
         while( (RCC_CR & BIT25)); // wait for PLL ready to be cleared
         // set PLL multiplier to 12 (yielding 48MHz)
-  // Warning here: if system clock is greater than 24MHz then wait-state(s) need to be
+  	// Warning here: if system clock is greater than 24MHz then wait-state(s) need to be
         // inserted into Flash memory interface
         FLASH_ACR |= BIT0;
-        FLASH_ACR &=~(BIT2 | BIT1);
+        //FLASH_ACR &=~(BIT2 | BIT1); // those are 0 after reset, so not nescesairy 
 
         // Turn on FLASH prefetch buffer
         FLASH_ACR |= BIT4;
-        RCC_CFGR &= ~(BIT21 | BIT20 | BIT19 | BIT18);
+ 
+       // set PLL multiplier to 12 (Because default PLLSRC is HSI/2 = 8/2=4 MHz, and 4*12=48)
+        // RCC_CFGR &= ~(BIT21 | BIT20 | BIT19 | BIT18); // this is not nescesairy as those are allready 0 after reset.
         RCC_CFGR |= (BIT21 | BIT19 );
 
         // Need to limit ADC clock to below 14MHz so will change ADC prescaler to 4
@@ -83,20 +85,24 @@ void initClock()
 
 
 void setup_adc(){
-	//TODO: do ADC calibration here instead of hidden in main. That way it also gets recallibrated after waking up from standbye mode (It looses cal in standbye mode.)
+	// Do ADC calibration here instead of "hidden" in main. That way it also gets recallibrated after waking up from standbye mode (It looses cal in standbye mode.)
 	// calibration has to be done with ADEN cleared / 0, so before enabling adc. Then wait untill adcal gets 0 again before enabling adc.
+	
+	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
+	ADC_CR |= (BIT31); // set adcal
+  	while (ADC_CR & (BIT31)); // Wait for ADCAL to be zero again before anbling ADC
 
-	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings!
+	ADC_CR |= (BIT0); // Set ADEN / enable power to adc BEFORE making settings! (But calibrate before this.)
 
         while (!(ADC_ISR&BIT0));// check ADCRDY (In ADC_ISR, bit0) to see if ADC is ready for further settings/starting a coversion
 
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result -- TODO: think about this in light of that desync issue...
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result -- TODO: think about this in light of that desync issue... (Maybe catch the overrun interrupt to handle it and not desync...)
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        ADC_SMPR |= ( BIT1 | BIT2 | BIT3); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, all three set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.)
+        ADC_SMPR |= ( BIT2 | BIT1 | BIT0); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, all three set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.) // XXX note: Changed: set bit0,1,2 instead of 1,2,3!!  
 
         ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
 
@@ -274,9 +280,6 @@ int main()
 	// 0x00B01A4B; Wrong: /*from datasheet code example: set up timings for fast Mode @400kHz with I2CCLK = 48MHz, rise time = 140ns, fall time = 40ns */
 	I2C1_CR1 |= BIT0; // enable I2C1 module
 
-	//Before enabling ADC, let it calibrate itself by settin ADCAL (And waiting 'till it is cleared again before enabling ADC)
-    ADC_CR |= (BIT31); // set adcal
-
 	//set up timer 3 for PWM
 	TIM3_PSC = 0; // prescaler. (48Mhz/psc+1=tim3clock)
     TIM3_ARR = 2048;  // 16 bit timer, AutoReloadRegister (frequency) (48E6/((TIM3_PSC+1)*TIM3_ARR)
@@ -300,9 +303,7 @@ int main()
     TIM14_EGR |= BIT0 ; // set UG to generate update event so registers are read to the timer
     TIM14_CR1 |= BIT0 ; // start after updating registers!
 
-    // Wait for ADCAL to be zero again:
-		while (ADC_CR & (BIT31));
-    // then power up and set up adc:
+    // power up and set up adc:
     setup_adc();
 
 	//setup array of nice collors
@@ -328,8 +329,7 @@ int main()
 		static int cc=0, tap;
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
-		typedef enum modes{direct, catchchange, freefall, TimeSinceLastFall, colorwheel, anothercolorwheel};
-		enum modes mode;
+		enum modes{direct, catchchange, freefall, TimeSinceLastFall, colorwheel, anothercolorwheel} mode;
 
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
