@@ -11,9 +11,6 @@ juggle protocol: Change colour on catch (Jump through a set of predefined pretty
 
 (change mode on (tripple) tap, but only if there has not been a freefall for a while, to prevent mode switching during juggling)
  
-Maybe TODO: Change color at higest point or start of freefal? Flash at catch?
-TODO: code is getting messy so clean up;
-
 */
 #include <stdbool.h>
 #include "stm32f030xx.h" // the modified Frank Duignan header file. (I started from his "Blinky" example).
@@ -99,10 +96,10 @@ void setup_adc(){
         // make rest of settings before starting conversion:
         ADC_CHSELR = (BIT3 | BIT2 | BIT1); // Ch3 = PA3, on pin9 CH2 = PA2 pin 8, CH1 =PA1 pin 7. (Set up channels)
         // It will scan all these channels, but it has only 1 data register for the result. So it will scan them (Low-High is default, so CH1,2,3,1,2,3,)
-        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result -- TODO: think about this in light of that desync issue... (Maybe catch the overrun interrupt to handle it and not desync...)
+        ADC_CFGR1 |= (BIT12 | BIT13); // BIT12 set it to discard on overrun and overwrite with latest result
                                // BIT16: DISCEN Discontinues operation (Don't auto scan, wait for trigger to scan next ch, cannot be used when CONT=1)
                                // BIT13: CONT. automatically restart conversion once previous conversion is finished.
-        ADC_SMPR |= ( BIT2 | BIT1 | BIT0); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, all three set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.) // XXX note: Changed: set bit0,1,2 instead of 1,2,3!!  
+        ADC_SMPR |= ( BIT2 | BIT1 | BIT0); // Set sample rate (Default = as fast as it can: 1.5clk, with bit1&2 set 71.5clk, with just bit 1: 13.5clk, 0+1+2 set: 239.5clck cycles. At 12Mhz that's ~50.1kHz for tick++ and 16.7Khz per ch.) 
 
         ADC_IER |=(BIT2|BIT3) ; // Enable end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
 
@@ -142,11 +139,11 @@ than 0x30 (3 g).
  i2c_write_byte(ADXL345_DUR, 0x10);	  // 625us per increment
  i2c_write_byte(ADXL345_LATENT, 0x80);
 
-//TODO: tune these thressholds so it does not wake up during transport but wakes easily when juggling
- i2c_write_byte(ADXL345_THRESH_INACT, 20); //was 20 
- i2c_write_byte(ADXL345_THRESH_ACT, 20);   //was 20
+//tuned these thressholds so it does not wake up during transport but wakes easily when needed
+ i2c_write_byte(ADXL345_THRESH_INACT, 20); //20 is OK  <<-- Below this, it goes to sleep
+ i2c_write_byte(ADXL345_THRESH_ACT, 120);   //was 20, now 120 <<-- above this, it wakes (So set higher, so it does not wake in transport)
 
- i2c_write_byte(ADXL345_TIME_INACT, 15); // seconds (30, 5 for test)
+ i2c_write_byte(ADXL345_TIME_INACT, 30); // seconds (30, 2 for test)
  i2c_write_byte(ADXL345_ACT_INACT_CTL, 0xFF); // look for activity/inactivity on all axes, AC coupled
  i2c_write_byte(ADXL345_THRESH_FF, 0x06); // Freefall thresshold. Reccomended between 0x05 and 0x09 (300/600m g)
  i2c_write_byte(ADXL345_TIME_FF, 0x14); //100ms (0x14 - 0x46) 350ms recommended.
@@ -347,7 +344,7 @@ int main()
 			Juggle = false;
 			}
 
-			if( tick > (unsigned int)(prevfftick+10000) ){ // If a freefall just ended, assume ball is catched (TODO: test this timing)
+			if( tick > (unsigned int)(prevfftick+10000) ){ // If a freefall just ended, assume ball is catched
 			//(increase wait time when falsely assumed, decrease when lagging too much)
 			// (Uses tick to prevent false catch detection while still falling)
 				if(Flying){ // Only detect catches when previously falling (flying). Otherwise lying still counts as a catch...
@@ -424,15 +421,24 @@ int main()
 
 			break;
 
-		case freefall: // red while freefalling / test mode
-			if(intjes&BIT2){ // on freefall:
-			//TODO: Change colour to the next one from the 2nd predefined list for freefall (Uhm, nope as there are multiple interrupts per fall.)
-			// for now, be red
-			setpoints[1]=SETPOINT;
-			delay(100000);
-			}else AllesUit();
-			break;
 
+		case freefall: // on freefall, red, on catch: flash green, else: be blue
+			if(intjes&BIT2){ // on freefall:
+			setpoints[1]=SETPOINT;
+			setpoints[0]=0;
+			setpoints[2]=0;
+			}else if(Catch){ // on catch:
+				setpoints[1]=0;
+				setpoints[0]=SETPOINT;
+				setpoints[2]=0;
+				Catch=false;
+			}else{
+				setpoints[1]=0;
+				setpoints[0]=0;
+				setpoints[2]=SETPOINT;				
+				}
+			delay(500000);
+			break;
 		// a case that keeps changing colour while juggle is true. (juggleball misbehaved as such while testing colorchange on catch and it kind of seems like a nice idea too)
 		case colorwheel:
 			if(Juggle){ 
@@ -460,7 +466,6 @@ int main()
 
 void ADC_Handler(){
 	tick++;
-        //GPIOA_BSRR = (BIT0); // SET PA0 (To time handler) (55.5KHz now. 3.4 / 3.6us active, 14 us not)
 
         static int ch=0; // keep between invocations
         static int pwm[3];
@@ -469,7 +474,7 @@ void ADC_Handler(){
                 adcresult=ADC_DR; // read adc result for debugger/global use.
 
                 pwm[ch] += (setpoints[ch]-adcresult); // integrating comparator.
-                // This gets out of sync sometimes, why? TODO
+                // This gets out of sync sometimes, why? TODO: enable and catch overrun interrupt? (In use, it is not actually a problem that often.)
                 // (Feedback from one ch controlling another. Not good.)
                 // Especially debugging throws it out of sync but sometimes after reset it is another ch as well.
             	// (Another ADC interrupt before ch is incremented, OK, for debug I understand how that can happen, but why it hapens after reset?)
@@ -486,8 +491,6 @@ void ADC_Handler(){
         	ch=0; // resync; (Just in case, but turned out usefull)
         	ADC_ISR&=(BIT3); // reset flag
         }
-
-        //GPIOA_BSRR =(BIT16);//  clear PA0 after running this handler. (To time handler and check sample rate) // TODO: might it be inverted? CLEAR=LED ON and SET=LED OFF?
 }
 
 void EXTI_Handler(void){
