@@ -246,6 +246,16 @@ while(num--){
 
 }
 
+void flash (unsigned int num){ // TODO: test this (as a faster and more visible alternative to blink(); shows the number "num" by flashing alternate colors )
+setpoints[0]=SETPOINT/2;
+	for(;num>0;num--){
+		if(num&0x01) setpoints[1] = SETPOINT/2; else setpoints[1] = 0;
+		if(num&0x02) setpoints[2] = SETPOINT/2; else setpoints[2] = 0;
+	delay(300000);
+	}
+AllesUit();
+}
+
 void rainbow(){
 	for(int i=0;i<SETPOINT;i++){
 		setpoints[2]=i;
@@ -319,10 +329,10 @@ int main()
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
-		static int cc=0, tap;
+		static int cc=0, rgb=0, tap;
 		static unsigned int prevtaptick, prevfftick; // timestamps for tap and freefall
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
-		enum modes{direct, catchchange, freefall, colorwheel, anothercolorwheel} mode;
+		enum modes{direct, catchchange, freefall, blinkcolorwheel, fadecolorwheel, pureRGB} mode; 
 
 		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
@@ -370,7 +380,8 @@ int main()
 			tap=0; // reset counter
 			mode++; // resets due to default case, so no fuss here.
 			AllesUit();
-			blink(mode);
+			//blink(mode); //XXX or TODO: replace with something faster, so mode switching is faster. Also blink() is hard to see throug juggleball enclosure, use the RGB led's	
+			//flash(mode); // meh. No.
 		}
 
 		switch(mode){
@@ -440,18 +451,36 @@ int main()
 			delay(500000);
 			break;
 		// a case that keeps changing colour while juggle is true. (juggleball misbehaved as such while testing colorchange on catch and it kind of seems like a nice idea too)
-		case colorwheel:
+		case blinkcolorwheel:
 			if(Juggle){ 
 					if ((3+cc)>=LEN_COLOR) cc=0; else cc+=3;
 				setpoints[0]=colors[1+cc];
 				setpoints[1]=colors[0+cc];
 				setpoints[2]=colors[2+cc];
 				delay(300000);
-			}
+			}else{
+				setpoints[1]=SETPOINT;				
+			} // So even when not juggling / on modechange, do show something other than "black" on the RGB leds
 			break;
 			
-		case anothercolorwheel:
-			if(Juggle) rainbow();
+		case fadecolorwheel:
+			if(Juggle) rainbow(); else setpoints[2]=SETPOINT;
+			break;
+
+	
+		case pureRGB:	
+			if(Catch){ // on catch:
+			//Change colour to the next one, only RGB
+				AllesUit();			
+				if (rgb<2) rgb++; else rgb=0;
+				Catch=false;
+			}
+			// setpoints[rgb]=SETPOINT; // nice trick, but it shows BGR... So:
+			switch(rgb){ // instead show RGB
+				case 0: setpoints[2]=SETPOINT; break;
+				case 1: setpoints[1]=SETPOINT; break;
+				case 2: setpoints[0]=SETPOINT; break;
+			}
 			break;
 
 		default:
