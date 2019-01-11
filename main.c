@@ -159,8 +159,9 @@ void goto_sleep(){
 
 	ADC_IER &=~(BIT2|BIT3) ; //disable adc interrupts: end of conversion interrupt (Bit2), and EOSEQ (End of Sequence) bit 3.
 
-	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl
+	i2c_read_byte(ADXL345_INT_SOURCE); // read interrupts (and clear them) from adxl
  	// because if it detects activity now, it's too soon to react too an thus will never be reacted too.
+	
 	i2c_write_byte(ADXL345_POWER_CTL,0x0C); // put ADXL to sleep at 8 Hz sample rate.
 	//i2c_write_byte(ADXL345_POWER_CTL,0x0D); // put ADXL to sleep at 4 Hz sample rate.
 	//i2c_write_byte(ADXL345_POWER_CTL,0x0E); // put ADXL to sleep at 2 Hz sample rate.
@@ -222,8 +223,8 @@ void goto_sleep(){
 	setup_adc(); // re enable / re setup adc, and its interrupts
 
 	i2c_write_byte(ADXL345_POWER_CTL,0x00); // wake ADXL -> standbye
- 	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
- 	i2c_read_byte(0x30); // read interrupts (and clear them) from adxl, so MCU does not get sent back to sleep again by inactivity.
+	i2c_write_byte(ADXL345_POWER_CTL,0x08); // standbye -> measure (For lower noise)
+	i2c_read_byte(ADXL345_INT_SOURCE); // read interrupts (and clear them) from adxl, so MCU does not get sent back to sleep again by inactivity.
 
 }
 
@@ -318,14 +319,21 @@ int main()
 	}
 
     blink(2);
-
+	
+	// In case of multiple BOR/POR events shortly after another (with empty/recharging battery), the adxl_init gets disturbed and "hangs".
+	// So it might be better to just wait it out untill the battery is full enough to start up. 
+	//(Hmmm. there is no BOR reset... TODO: Catch I2C timeouts and retry, then? Or something WDT? (IWDG))
+	
+	
 	adxl_init(); // power up and setup adxl345
 
 	blink(2);
 
-	//XXX remove this, is just for testing sleep mode (On real HW this time, so with ADXL)
-	//goto_sleep();	
-	//XXX (on the other hand, sleep after poweron means those bright LED's don't blind me while closing the enclosure... But it interferes with debugging.)	
+	goto_sleep();	
+	// sleep after poweron means those bright LED's don't blind me while closing the enclosure... 
+	//And means the battery can recharge when it is too empty to power the LED's (the charger starts slow/lowI when below 3V)
+	
+	// But it interferes with debugging. So comment this out when debugging.
 
 	while(1){
 		int x,y,z, intjes, buffer[6];
@@ -334,7 +342,7 @@ int main()
 		static bool Juggle=false, Catch=false, Flying=false; // Juggle in progress? Just catched?
 		enum modes{direct, catchchange, freefall, blinkcolorwheel, fadecolorwheel, pureRGB} mode; 
 
-		intjes = i2c_read_byte(0x30); // read adxl interrupt flags (to sense taps/freefall etc.)
+		intjes = i2c_read_byte(ADXL345_INT_SOURCE); // read adxl interrupt flags (to sense taps/freefall etc.)
 		// reading resets them, so only read once a cycle
 
 		if((intjes&BIT3)&&!(intjes&BIT4)){ // inactivity.
